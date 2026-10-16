@@ -38,13 +38,13 @@ cd src-tauri && cargo test  # 后端全部测试（离线、无需 Tauri 运行�
 src/                  # Vue 前端（views/ 七个页面，stores/ 仅 library 缓存）
 src/api.ts            # 前后端契约
 src-tauri/src/
-├── lib.rs            # 入口：注册 dialog 插件、AppState、22 个命令
+├── lib.rs            # 入口：注册 dialog 插件、AppState、26 个命令
 ├── commands.rs       # Tauri 命令薄壳 + 可测试的 *_impl 业务逻辑
 ├── models.rs         # API 类型（serde snake_case）
-├── db.rs             # SQLite 迁移与查询（仅建表不 ALTER；含 learning_log/unit_summaries/chapter_explanations；测试用 open_in_memory）
-├── config.rs         # app_data_dir/config.json（api_key、auto_start_reading 等，勿入库勿进 git；新字段靠 serde default 兼容旧文件）
+├── db.rs             # SQLite 迁移与查询（仅建表不 ALTER；含 learning_log/unit_summaries/chapter_explanations/quiz_batches；测试用 open_in_memory）
+├── config.rs         # app_data_dir/config.json（api_key、auto_start_reading、disable_thinking 等，勿入库勿进 git；新字段靠 serde default 兼容旧文件）
 ├── ingest.rs         # 书籍解析与 1500–3000 字单元切分；EPUB 插图抽到 books/<id>/images/，正文插 `![alt](文件名)` 标记段，前端原位渲染
-├── llm.rs            # OpenAI 兼容客户端 + 中文 prompt + mock 模式（长文本输出走 SSE 流式）
+├── llm.rs            # OpenAI 兼容客户端 + 中文 prompt + mock 模式（长文本输出走 SSE 流式；disable_thinking 开关注入关思考参数，厂商方言见 thinking_off_params）
 └── scheduler.rs      # SM-2 调度（基线间隔 [1,2,4,7,15,30]，ease 2.5/≥1.3）
 fixtures/demo-book.md # 端到端与测试用的示例书（3 章）
 ```
@@ -52,9 +52,11 @@ fixtures/demo-book.md # 端到端与测试用的示例书（3 章）
 ## 核心机制速查
 
 - 单元首次 `start_reading` → 每个知识点建 review_item（明天到期，幂等）；答题错 → 该题对应知识点 review_item 重置为明天
-- 章（大节）= 阅读/领读单位，单元（小节）= 做题/复习单位：章节归属**不入库**，读时现算——优先重解析源文件的目录层级（EPUB NCX/nav 顶层条目为大节，`parse_file_grouped` + `unit_group_titles` 用与导入相同的切分确定性对齐单元序），源文件缺失/单元数失配时回退按单元标题推导（去"（N）"后缀）；连续聚合 + 超 3 万字强制拆段见 `group_units_into_chapters`；章级命令 `get_chapter_content`/`start_chapter_reading`/`ask_chapter`/`ask_chapter_selection` 参数仍是 unit_id（后端解析所属章）；章领读对章内每节幂等登记（与单元领读共用 `ensure_unit_registered`），章正文喂 LLM 超 1.5 万字取头尾（`cap_llm_input`）；章领读讲解持久化于 `chapter_explanations` 表（键=章首节 unit_id，重开页面直接展示，"重新领读"覆盖）；侧边栏"继续阅读"= localStorage 记录的最近阅读路由（`App.vue`，键 `ai-teacher:last-reading`）
+- 章（大节）= 阅读/领读单位，单元（小节）= 做题/复习单位：章节归属**不入库**，读时现算——优先重解析源文件的目录层级（EPUB NCX/nav 顶层条目为大节，`parse_file_grouped` + `unit_group_titles` 用与导入相同的切分确定性对齐单元序），源文件缺失/单元数失配时回退按单元标题推导（去"（N）"后缀）；连续聚合 + 超 3 万字强制拆段见 `group_units_into_chapters`；章级命令 `get_chapter_content`/`start_chapter_reading`/`ask_chapter`/`ask_chapter_selection` 参数仍是 unit_id（后端解析所属章）；章领读对章内每节幂等登记（与单元领读共用 `ensure_unit_registered`），章正文喂 LLM 超 1.5 万字取头尾（`cap_llm_input`）；章领读讲解持久化于 `chapter_explanations` 表（键=章首节 unit_id，重开页面直接展示，"重新领读"覆盖）；阅读页翻章入口 = 两侧悬浮箭头（sticky 钉在视口中线、半透明悬停显形，首/末章单侧隐藏）/ ←→ 键 / 双指横滑（wheel deltaX 累计 200px 或触屏位移 70px，1s 冷却，均走 `goChapter`，见 ReadingView.vue）；侧边栏"继续阅读"= localStorage 记录的最近阅读路由（`App.vue`，键 `ai-teacher:last-reading`）
 - 注意：`pnpm build` 只产出前端 dist，桌面应用必须 `pnpm tauri dev`/build 才会带上新前后端；判断当前应用是哪次构建 → 设置页底部"关于"显示 v版本 + git 短哈希（有未提交改动带 `-dirty`）+ 构建时间（vite.config.ts `define.__BUILD_INFO__` 注入，前端读 `src/build-info.ts`）
 - 单元全部题目都答过 → status=done，mastery=每题最近一次答题的正确率
+- 单元状态 skipped（无需掌握）：书详情页章/小节 ✔ 标记（`set_unit_skipped`/`set_chapter_skipped`），进度 done_units 计入 done+skipped、标记时删除该单元复习项；领读不回退（`ensure_unit_registered` 仅 unread→reading）、重新出题回退 reading、答完全部题转 done；取消标记回 unread、复习项随下次领读幂等重建
+- 重新出题（`regenerate_quiz`）：旧题整批退役**不删除**（`quiz_batches` 表记活跃批次边界 id，`list_questions`/`count_questions`/`latest_attempts` 只看当前批次），错题本/复习项/作答记录继续引用旧题、重练照旧；单元已 done/skipped 则退回 reading 并清空 mastery，新批次答完重算
 - 复习通过/失败都走 `scheduler.next_schedule` 更新 ease/reps/interval/due_date，条目永不删除
 - 流式（stream=true 常开）：仅领读 explain/答疑 ask/选词问 ask_selection（含对应章级 start_chapter_reading/ask_chapter/ask_chapter_selection）走 SSE，经 `tauri::ipc::Channel<String>` 推到前端（api.ts `streamArg` 助手）；出题/判分等 JSON 输出必须整段解析，不流式
 - 领读上下文：单元首次领读时生成摘要存 `unit_summaries`（幂等）；领读/答疑带前一单元摘要，无摘要降级为它标题 + 开头摘录

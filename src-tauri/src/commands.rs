@@ -266,7 +266,7 @@ pub fn get_chapter_content_impl(db: &Db, unit_id: i64) -> Result<ChapterContent,
     })
 }
 
-/// 单元首次学习的幂等登记（章领读与单元领读共用）：状态→reading（done 不动）、
+/// 单元首次学习的幂等登记（章领读与单元领读共用）：状态→reading（done/skipped 不动）、
 /// 无复习项才提取知识点建复习项（明天到期）、无摘要才生成摘要。
 async fn ensure_unit_registered(
     db: &Db,
@@ -274,7 +274,7 @@ async fn ensure_unit_registered(
     unit: &UnitRow,
     content: &str,
 ) -> Result<(), String> {
-    if unit.status != UnitStatus::Done.as_str() {
+    if unit.status == UnitStatus::Unread.as_str() {
         db.update_unit_progress(unit.id, UnitStatus::Reading.as_str(), unit.mastery)
             .map_err(|e| e.to_string())?;
     }
@@ -408,6 +408,35 @@ pub async fn generate_quiz_impl(
     if !existing.is_empty() {
         return Ok(existing.iter().map(question_to_public).collect());
     }
+    generate_and_store_questions(db, settings, unit_id).await
+}
+
+/// 重新出题：当前这批题整批退役（只记边界、不删除，错题本/复习重做/作答记录都继续引用旧题），
+/// 再生成一批新题。单元若已完成/已标记无需掌握则退回 reading、清空掌握度（等于撤销跳过标记），
+/// 等新批次答完由 maybe_complete_unit 重算。
+pub async fn regenerate_quiz_impl(
+    db: &Db,
+    settings: &LlmSettings,
+    unit_id: i64,
+) -> Result<Vec<QuizQuestion>, String> {
+    let unit = db
+        .get_unit(unit_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("未找到该单元")?;
+    let at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    db.retire_questions(unit_id, &at).map_err(|e| e.to_string())?;
+    if unit.status == UnitStatus::Done.as_str() || unit.status == UnitStatus::Skipped.as_str() {
+        db.update_unit_progress(unit_id, UnitStatus::Reading.as_str(), None)
+            .map_err(|e| e.to_string())?;
+    }
+    generate_and_store_questions(db, settings, unit_id).await
+}
+
+async fn generate_and_store_questions(
+    db: &Db,
+    settings: &LlmSettings,
+    unit_id: i64,
+) -> Result<Vec<QuizQuestion>, String> {
     let unit = db
         .get_unit(unit_id)
         .map_err(|e| e.to_string())?
@@ -642,7 +671,7 @@ pub fn get_book_detail_impl(db: &Db, book_id: i64) -> Result<BookDetail, String>
     let units: Vec<Unit> = rows.iter().map(row_to_unit).collect();
     let done = units
         .iter()
-        .filter(|u| u.status == UnitStatus::Done)
+        .filter(|u| u.status == UnitStatus::Done || u.status == UnitStatus::Skipped)
         .count() as i64;
     let measured = measure_book_units(db, book_id, &rows);
     let chapters = ingest::group_units_into_chapters(&measured)
@@ -679,6 +708,35 @@ pub fn remove_book_impl(db: &Db, app_data_dir: &Path, book_id: i64) -> Result<()
     db.delete_book(book_id).map_err(|e| e.to_string())?;
     let dir = app_data_dir.join("books").join(book_id.to_string());
     let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}
+
+/// 「无需掌握」标记：skipped=true 置 skipped、清掌握度并删除该单元全部复习项（进度照计）；
+/// 取消则回到 unread。从任何状态都允许标记；取消后复习项由下次领读登记幂等重建。
+pub fn set_unit_skipped_impl(db: &Db, unit_id: i64, skipped: bool) -> Result<(), String> {
+    db.get_unit(unit_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("未找到该单元")?;
+    let status = if skipped {
+        UnitStatus::Skipped
+    } else {
+        UnitStatus::Unread
+    };
+    db.update_unit_progress(unit_id, status.as_str(), None)
+        .map_err(|e| e.to_string())?;
+    if skipped {
+        db.delete_review_items_for_unit(unit_id)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// 章级「无需掌握」：参数仍是 unit_id（解析所属章），对章内每个单元套用单元级逻辑。
+pub fn set_chapter_skipped_impl(db: &Db, unit_id: i64, skipped: bool) -> Result<(), String> {
+    let scope = resolve_chapter(db, unit_id)?;
+    for (row, _) in &scope.units {
+        set_unit_skipped_impl(db, row.id, skipped)?;
+    }
     Ok(())
 }
 
@@ -832,6 +890,24 @@ pub fn get_book_detail(state: State<'_, AppState>, book_id: i64) -> Result<BookD
 }
 
 #[tauri::command]
+pub fn set_unit_skipped(
+    state: State<'_, AppState>,
+    unit_id: i64,
+    skipped: bool,
+) -> Result<(), String> {
+    set_unit_skipped_impl(&state.db, unit_id, skipped)
+}
+
+#[tauri::command]
+pub fn set_chapter_skipped(
+    state: State<'_, AppState>,
+    unit_id: i64,
+    skipped: bool,
+) -> Result<(), String> {
+    set_chapter_skipped_impl(&state.db, unit_id, skipped)
+}
+
+#[tauri::command]
 pub fn get_today(state: State<'_, AppState>) -> Result<TodayPlan, String> {
     get_today_impl(&state.db)
 }
@@ -959,6 +1035,15 @@ pub async fn generate_quiz(
 }
 
 #[tauri::command]
+pub async fn regenerate_quiz(
+    state: State<'_, AppState>,
+    unit_id: i64,
+) -> Result<Vec<QuizQuestion>, String> {
+    let settings = load_settings(&state.app_data_dir);
+    regenerate_quiz_impl(&state.db, &settings, unit_id).await
+}
+
+#[tauri::command]
 pub async fn submit_answer(
     state: State<'_, AppState>,
     question_id: i64,
@@ -1071,6 +1156,135 @@ mod tests {
             .unwrap();
         let unit = db.get_unit(unit_id).unwrap().unwrap();
         assert_eq!(unit.status, "done");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn skipped_unit_counts_progress_and_clears_review_items() {
+        std::env::set_var("AI_TEACHER_MOCK_LLM", "1");
+        let (db, dir, unit_id) = setup_unit("skip-unit");
+        let settings = LlmSettings::default();
+        // 领读登记后会产生复习项
+        start_reading_impl(&db, &settings, unit_id, &mut |_: &str| {})
+            .await
+            .unwrap();
+        assert!(db.has_review_items(unit_id).unwrap());
+
+        // 标记无需掌握：状态 skipped、掌握度清空、复习项删除、进度照计
+        set_unit_skipped_impl(&db, unit_id, true).unwrap();
+        let unit = db.get_unit(unit_id).unwrap().unwrap();
+        assert_eq!(unit.status, "skipped");
+        assert_eq!(unit.mastery, None);
+        assert!(!db.has_review_items(unit_id).unwrap());
+        let books = db.list_books().unwrap();
+        assert_eq!((books[0].total_units, books[0].done_units), (1, 1));
+
+        // 领读不回退 skipped
+        start_reading_impl(&db, &settings, unit_id, &mut |_: &str| {})
+            .await
+            .unwrap();
+        assert_eq!(db.get_unit(unit_id).unwrap().unwrap().status, "skipped");
+
+        // 撤销标记回到 unread、进度回落；不存在的单元报错
+        set_unit_skipped_impl(&db, unit_id, false).unwrap();
+        assert_eq!(db.get_unit(unit_id).unwrap().unwrap().status, "unread");
+        assert_eq!(db.list_books().unwrap()[0].done_units, 0);
+        assert!(set_unit_skipped_impl(&db, 9999, true).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn set_chapter_skipped_marks_whole_chapter() {
+        std::env::set_var("AI_TEACHER_MOCK_LLM", "1");
+        let (db, dir, ids) = setup_chapter_book("skip-chapter");
+        // 第一章领读后整章标记
+        start_chapter_reading_impl(&db, &LlmSettings::default(), ids[0], &mut |_: &str| {})
+            .await
+            .unwrap();
+        set_chapter_skipped_impl(&db, ids[0], true).unwrap();
+        for uid in &ids[0..2] {
+            let u = db.get_unit(*uid).unwrap().unwrap();
+            assert_eq!(u.status, "skipped");
+            assert!(!db.has_review_items(*uid).unwrap());
+        }
+        // 下一章不受影响；详情页进度计入 skipped
+        assert_eq!(db.get_unit(ids[2]).unwrap().unwrap().status, "unread");
+        let book_id = db.get_unit(ids[0]).unwrap().unwrap().book_id;
+        let detail = get_book_detail_impl(&db, book_id).unwrap();
+        assert_eq!((detail.book.total_units, detail.book.done_units), (3, 2));
+
+        // 从章内第二节进入也能取消整章标记
+        set_chapter_skipped_impl(&db, ids[1], false).unwrap();
+        assert_eq!(db.get_unit(ids[0]).unwrap().unwrap().status, "unread");
+        assert_eq!(db.get_unit(ids[1]).unwrap().unwrap().status, "unread");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn regenerate_quiz_retires_batch_and_keeps_history() {
+        std::env::set_var("AI_TEACHER_MOCK_LLM", "1");
+        let (db, dir, unit_id) = setup_unit("regen");
+        let settings = LlmSettings::default();
+        let old = generate_quiz_impl(&db, &settings, unit_id).await.unwrap();
+        // 答错一题：留下作答记录和错题复习项
+        submit_answer_impl(&db, &settings, old[0].id, "明显错误的选项")
+            .await
+            .unwrap();
+
+        let new = regenerate_quiz_impl(&db, &settings, unit_id).await.unwrap();
+        assert_eq!(new.len(), 5);
+        assert!(new.iter().all(|q| !old.iter().any(|o| o.id == q.id)));
+        // 旧题不删除（错题本/重练继续引用）；活跃列表与计数只看新批次
+        assert!(db.get_question(old[0].id).unwrap().is_some());
+        let old_ids: Vec<i64> = old.iter().map(|q| q.id).collect();
+        assert!(db
+            .list_questions(unit_id)
+            .unwrap()
+            .iter()
+            .all(|q| !old_ids.contains(&q.id)));
+        assert_eq!(db.count_questions(unit_id).unwrap(), 5);
+        // 旧批次的作答记录不计入新批次完成度
+        assert!(db.latest_attempts(unit_id).unwrap().is_empty());
+
+        // 新批次全部答完 → 重新完成并重算掌握度（mock 单选答案依次 A/B/C，简答答满 10 字算对）
+        let letters = ["A", "B", "C"];
+        let mut mcq_i = 0;
+        for q in &new {
+            let ans = if q.qtype == QType::Mcq {
+                let a = letters[mcq_i].to_string();
+                mcq_i += 1;
+                a
+            } else {
+                "这是一段足够长的简答回答".to_string()
+            };
+            submit_answer_impl(&db, &settings, q.id, &ans).await.unwrap();
+        }
+        let u = db.get_unit(unit_id).unwrap().unwrap();
+        assert_eq!(u.status, "done");
+        assert_eq!(u.mastery, Some(1.0));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn regenerate_quiz_reverts_done_and_skipped() {
+        std::env::set_var("AI_TEACHER_MOCK_LLM", "1");
+        let (db, dir, unit_id) = setup_unit("regen-status");
+        let settings = LlmSettings::default();
+        generate_quiz_impl(&db, &settings, unit_id).await.unwrap();
+
+        // skipped → reading、清空掌握度（等于撤销跳过标记）
+        set_unit_skipped_impl(&db, unit_id, true).unwrap();
+        regenerate_quiz_impl(&db, &settings, unit_id).await.unwrap();
+        let u = db.get_unit(unit_id).unwrap().unwrap();
+        assert_eq!(u.status, "reading");
+        assert_eq!(u.mastery, None);
+
+        // done 同样回退
+        db.update_unit_progress(unit_id, "done", Some(1.0)).unwrap();
+        regenerate_quiz_impl(&db, &settings, unit_id).await.unwrap();
+        let u = db.get_unit(unit_id).unwrap().unwrap();
+        assert_eq!(u.status, "reading");
+        assert_eq!(u.mastery, None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1531,6 +1745,7 @@ mod tests {
                 api_key: "sk-1".to_string(),
                 model: "gpt".to_string(),
                 auto_start_reading: false,
+                disable_thinking: false,
             },
         )
         .unwrap();

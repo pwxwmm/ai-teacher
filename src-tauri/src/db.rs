@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS questions (
     explanation TEXT NOT NULL,
     knowledge_point TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS quiz_batches (
+    unit_id INTEGER PRIMARY KEY REFERENCES units(id) ON DELETE CASCADE,
+    active_from_id INTEGER NOT NULL,
+    retired_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS attempts (
     id INTEGER PRIMARY KEY,
     question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
@@ -277,7 +282,7 @@ impl Db {
             let mut stmt = c.prepare(
                 "SELECT b.id, b.title, b.format, b.added_at,
                         (SELECT COUNT(*) FROM units u WHERE u.book_id = b.id) AS total_units,
-                        (SELECT COUNT(*) FROM units u WHERE u.book_id = b.id AND u.status = 'done') AS done_units
+                        (SELECT COUNT(*) FROM units u WHERE u.book_id = b.id AND u.status IN ('done', 'skipped')) AS done_units
                  FROM books b ORDER BY b.id",
             )?;
             let rows = stmt.query_map([], |row| {
@@ -429,13 +434,41 @@ impl Db {
         })
     }
 
+    /// 当前活跃批次的起始题 id（无记录 = 0，即全部题都是活跃批次）。
+    pub fn active_question_boundary(&self, unit_id: i64) -> Result<i64, DbError> {
+        self.with_conn(|c| {
+            Ok(c.query_row(
+                "SELECT COALESCE((SELECT active_from_id FROM quiz_batches WHERE unit_id = ?1), 0)",
+                params![unit_id],
+                |row| row.get(0),
+            )?)
+        })
+    }
+
+    /// 重新出题前整批退役：把活跃边界推到现有最后一题之后；旧题不删除，
+    /// 错题本、复习项、作答记录继续引用它们，list/count/latest_attempts 只看新批次。
+    pub fn retire_questions(&self, unit_id: i64, at: &str) -> Result<(), DbError> {
+        self.with_conn(|c| {
+            c.execute(
+                "INSERT INTO quiz_batches (unit_id, active_from_id, retired_at)
+                 VALUES (?1, (SELECT COALESCE(MAX(id), 0) + 1 FROM questions WHERE unit_id = ?1), ?2)
+                 ON CONFLICT(unit_id) DO UPDATE SET
+                     active_from_id = excluded.active_from_id,
+                     retired_at = excluded.retired_at",
+                params![unit_id, at],
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn list_questions(&self, unit_id: i64) -> Result<Vec<QuestionRow>, DbError> {
+        let boundary = self.active_question_boundary(unit_id)?;
         self.with_conn(|c| {
             let mut stmt = c.prepare(
                 "SELECT id, unit_id, qtype, stem, options_json, answer, explanation, knowledge_point
-                 FROM questions WHERE unit_id = ?1 ORDER BY id",
+                 FROM questions WHERE unit_id = ?1 AND id >= ?2 ORDER BY id",
             )?;
-            let rows = stmt.query_map(params![unit_id], map_question)?;
+            let rows = stmt.query_map(params![unit_id, boundary], map_question)?;
             rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
         })
     }
@@ -454,10 +487,11 @@ impl Db {
     }
 
     pub fn count_questions(&self, unit_id: i64) -> Result<i64, DbError> {
+        let boundary = self.active_question_boundary(unit_id)?;
         self.with_conn(|c| {
             let n: i64 = c.query_row(
-                "SELECT COUNT(*) FROM questions WHERE unit_id = ?1",
-                params![unit_id],
+                "SELECT COUNT(*) FROM questions WHERE unit_id = ?1 AND id >= ?2",
+                params![unit_id, boundary],
                 |row| row.get(0),
             )?;
             Ok(n)
@@ -482,15 +516,16 @@ impl Db {
         })
     }
 
-    /// 每道题最近一次作答是否正确（同题多次作答以最新一次为准）。
+    /// 当前批次每道题最近一次作答是否正确（同题多次作答以最新一次为准；旧批次题不计）。
     pub fn latest_attempts(&self, unit_id: i64) -> Result<HashMap<i64, bool>, DbError> {
+        let boundary = self.active_question_boundary(unit_id)?;
         self.with_conn(|c| {
             let mut stmt = c.prepare(
                 "SELECT a.question_id, a.correct FROM attempts a
                  JOIN questions q ON q.id = a.question_id
-                 WHERE q.unit_id = ?1 ORDER BY a.id",
+                 WHERE q.unit_id = ?1 AND q.id >= ?2 ORDER BY a.id",
             )?;
-            let rows = stmt.query_map(params![unit_id], |row| {
+            let rows = stmt.query_map(params![unit_id, boundary], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)? != 0))
             })?;
             let mut map = HashMap::new();
@@ -512,6 +547,17 @@ impl Db {
                 |row| row.get(0),
             )?;
             Ok(exists != 0)
+        })
+    }
+
+    /// 标记"无需掌握"时清除该单元的全部复习项；取消标记后由领读登记幂等重建。
+    pub fn delete_review_items_for_unit(&self, unit_id: i64) -> Result<(), DbError> {
+        self.with_conn(|c| {
+            c.execute(
+                "DELETE FROM review_items WHERE unit_id = ?1",
+                params![unit_id],
+            )?;
+            Ok(())
         })
     }
 

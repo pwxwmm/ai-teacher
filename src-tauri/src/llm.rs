@@ -38,12 +38,37 @@ pub fn is_mock_enabled() -> bool {
         .unwrap_or(false)
 }
 
+/// 关思考参数（disable_thinking 开启时注入请求体）：按 base_url 识别厂商方言——
+/// 阿里系（dashscope/aliyuncs）`enable_thinking=false`；智谱（bigmodel）/火山（volces）
+/// `thinking="disabled"`；未识别网关两种都带上；DeepSeek 官方无参数可关（由模型名
+/// chat/reasoner 决定），返回空。
+pub fn thinking_off_params(base_url: &str) -> serde_json::Map<String, serde_json::Value> {
+    let mut map = serde_json::Map::new();
+    let url = base_url.to_lowercase();
+    if url.contains("deepseek") {
+        return map;
+    }
+    let ali = url.contains("dashscope") || url.contains("aliyuncs");
+    let zhipu_or_volcano = url.contains("bigmodel") || url.contains("volces");
+    if ali || (!ali && !zhipu_or_volcano) {
+        map.insert("enable_thinking".to_string(), serde_json::Value::Bool(false));
+    }
+    if zhipu_or_volcano || (!ali && !zhipu_or_volcano) {
+        map.insert(
+            "thinking".to_string(),
+            serde_json::Value::String("disabled".to_string()),
+        );
+    }
+    map
+}
+
 /// OpenAI 兼容的 chat/completions 调用。base_url 是否以 /v1 结尾均可。
 pub async fn chat(
     base_url: &str,
     api_key: &str,
     model: &str,
     messages: Vec<ChatMessage>,
+    disable_thinking: bool,
 ) -> Result<String, String> {
     if api_key.trim().is_empty() {
         return Err("请先在设置中配置 API Key".to_string());
@@ -53,11 +78,16 @@ pub async fn chat(
         .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败：{e}"))?;
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "model": model,
         "messages": messages,
         "stream": false,
     });
+    if disable_thinking {
+        if let Some(obj) = body.as_object_mut() {
+            obj.extend(thinking_off_params(base_url));
+        }
+    }
 
     let mut retries = 0u32;
     loop {
@@ -107,13 +137,6 @@ fn normalize_base_url(base_url: &str) -> String {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-struct ChatStreamBody<'a> {
-    model: &'a str,
-    messages: &'a [ChatMessage],
-    stream: bool,
-}
-
 /// OpenAI 兼容的流式 chat/completions 调用：增量内容经 on_delta 推送，返回完整文本。
 /// 仅在拿到初始响应前重试 429/5xx；流中途出错直接报错。
 pub async fn chat_stream(
@@ -129,11 +152,16 @@ pub async fn chat_stream(
         .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败：{e}"))?;
-    let body = ChatStreamBody {
-        model: &settings.model,
-        messages: &messages,
-        stream: true,
-    };
+    let mut body = serde_json::json!({
+        "model": settings.model,
+        "messages": messages,
+        "stream": true,
+    });
+    if settings.disable_thinking {
+        if let Some(obj) = body.as_object_mut() {
+            obj.extend(thinking_off_params(&settings.base_url));
+        }
+    }
 
     let mut retries = 0u32;
     let resp = loop {
@@ -388,6 +416,7 @@ pub async fn knowledge_points(
                      学习内容：\n{unit_text}"
                 )),
             ],
+            settings.disable_thinking,
         )
         .await?
     };
@@ -457,6 +486,7 @@ pub async fn make_quiz(
                      学习内容：\n{unit_text}"
                 )),
             ],
+            settings.disable_thinking,
         )
         .await?
     };
@@ -598,6 +628,7 @@ pub async fn grade_short(
                      严格只输出 JSON：{{\"correct\": true 或 false, \"comment\": \"一句中文点评\"}}。"
                 )),
             ],
+            settings.disable_thinking,
         )
         .await?
     };
@@ -682,6 +713,7 @@ pub async fn summarize(settings: &LlmSettings, unit_text: &str) -> Result<String
                  学习内容：\n{unit_text}"
             )),
         ],
+        settings.disable_thinking,
     )
     .await
 }
@@ -698,6 +730,7 @@ pub async fn ping(settings: &LlmSettings) -> Result<(), String> {
             ChatMessage::system("You are a helpful assistant."),
             ChatMessage::user("请只回复两个字：成功"),
         ],
+        settings.disable_thinking,
     )
     .await
     .map(|_| ())
@@ -758,6 +791,7 @@ mod tests {
             api_key: String::new(),
             model: "test-model".to_string(),
             auto_start_reading: false,
+            disable_thinking: false,
         }
     }
 
@@ -934,10 +968,38 @@ mod tests {
         ping(&mock_settings()).await.unwrap();
     }
 
+    #[test]
+    fn thinking_off_params_match_vendor_dialects() {
+        // DeepSeek 官方无参数可关（由模型名决定）
+        assert!(thinking_off_params("https://api.deepseek.com").is_empty());
+        // 阿里系：只带 enable_thinking=false
+        let ali = thinking_off_params("https://dashscope.aliyuncs.com/compatible-mode/v1");
+        assert_eq!(
+            ali.get("enable_thinking"),
+            Some(&serde_json::Value::Bool(false))
+        );
+        assert!(!ali.contains_key("thinking"));
+        // 智谱：只带 thinking=disabled
+        let zhipu = thinking_off_params("https://open.bigmodel.cn/api/paas/v4");
+        assert_eq!(
+            zhipu.get("thinking"),
+            Some(&serde_json::Value::String("disabled".to_string()))
+        );
+        assert!(!zhipu.contains_key("enable_thinking"));
+        // 火山引擎：只有 thinking=disabled
+        let volcano = thinking_off_params("https://ark.cn-beijing.volces.com/api/v3");
+        assert!(volcano.contains_key("thinking"));
+        assert!(!volcano.contains_key("enable_thinking"));
+        // 未识别网关：两种都带
+        let unknown = thinking_off_params("https://gateway.example.com");
+        assert!(unknown.contains_key("thinking"));
+        assert!(unknown.contains_key("enable_thinking"));
+    }
+
     #[tokio::test]
     async fn empty_api_key_rejected_before_any_request() {
         // chat() 不经过 mock 分支，空 key 直接报错，且不会发起网络请求
-        let err = chat("", "", "m", vec![ChatMessage::user("hi")])
+        let err = chat("", "", "m", vec![ChatMessage::user("hi")], false)
             .await
             .unwrap_err();
         assert_eq!(err, "请先在设置中配置 API Key");
@@ -1015,6 +1077,7 @@ mod tests {
             api_key: "sk-test".to_string(),
             model: "m".to_string(),
             auto_start_reading: false,
+            disable_thinking: false,
         };
         let mut deltas: Vec<String> = Vec::new();
         let full = chat_stream(&settings, vec![ChatMessage::user("hi")], &mut |d: &str| {
