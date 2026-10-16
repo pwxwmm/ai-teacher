@@ -26,6 +26,8 @@ cd src-tauri && cargo test  # 后端全部测试（离线、无需 Tauri 运行�
 
 环境变量 `AI_TEACHER_MOCK_LLM=1`：LLM 全部走确定性 mock，可无 API Key 端到端跑通流程；后端测试依赖它。
 
+发版走 GitHub Actions（`.github/workflows/release.yml`）：`git tag v<x.y.z> && git push origin v<x.y.z>` 触发，windows-latest 出 NSIS / macos-latest 出 arm64 DMG，建**草稿** Release 待改完说明再发布；tag 版本号必须与 `tauri.conf.json` 的 `version` 一致（CI 会跑 `pnpm build` 里的 vue-tsc 严格检查，红了直接失败，不会出包）。
+
 ## 前后端契约（改任何一侧都要同步另一侧）
 
 - `src/api.ts` 是唯一契约源：`api` 对象的 invoke 封装 + TS 类型，与 Rust `src-tauri/src/models.rs` / `commands.rs` 一一对应

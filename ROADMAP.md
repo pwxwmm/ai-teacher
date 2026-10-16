@@ -37,6 +37,7 @@ MVP（v0.1）已交付：导入书 → 领读 → 做题 → 间隔复习 的完
 
 ## 随时可做的小事
 
+- ✅ GitHub Actions 发布流水线：push `v*` tag 触发（`.github/workflows/release.yml`），windows-latest 出 NSIS / macos-latest 出 Apple Silicon DMG，tauri-action 建草稿 Release 挂安装包；tag 版本号需与 `tauri.conf.json` 一致，不等自动更新（接入 updater 见迭代 3）
 - ✅ 重新出题：做题页/结果页一键换一批新题；旧题退役不删除，错题本、复习项、作答记录全部保留
 - ✅ 触控板/数位板双指横滑 + ←→ 键翻章（阅读页 wheel/touch 手势与按键，与两侧悬浮箭头同走 goChapter）
 - ✅ 阅读页原文 Markdown 渲染：标题/加粗/列表/表格/代码块/引用按排版显示，不再露出 `##`、`**`、`|` 源码符号
