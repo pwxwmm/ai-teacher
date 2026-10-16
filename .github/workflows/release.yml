@@ -44,11 +44,15 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # tauri build 会先跑 beforeBuildCommand（pnpm build = vue-tsc 严格检查 + vite build），
-      # 再按 bundle.targets 出 NSIS / DMG，最后建草稿 Release 并挂附件
+      # 再按 bundle.targets 出 NSIS / DMG，最后建草稿 Release 并挂附件。
+      # 注意：tagName 必须显式传（action.yml 无默认值），否则只构建不建 Release。
       - name: Build & create release
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "ai-teacher v__VERSION__"
+          releaseBody: "See the assets to download this version and install."
           releaseDraft: true
           prerelease: false
