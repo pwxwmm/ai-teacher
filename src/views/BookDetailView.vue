@@ -53,7 +53,24 @@
                   {{ doneCount(ch) }}/{{ ch.units.length }} 小节已学
                 </span>
               </div>
-              <n-button size="small" @click.stop="goChapter(ch.first_unit_id)">领读 / 阅读</n-button>
+              <div class="chapter-actions">
+                <n-tooltip>
+                  <template #trigger>
+                    <n-button
+                      size="small"
+                      quaternary
+                      circle
+                      :type="chapterSkipped(ch) ? 'success' : 'default'"
+                      :disabled="skipBusy"
+                      @click.stop="toggleChapterSkip(ch)"
+                    >
+                      <n-icon><Checkmark /></n-icon>
+                    </n-button>
+                  </template>
+                  {{ chapterSkipped(ch) ? "整章已标记无需掌握，点击取消" : "整章标记为无需掌握（不做题，进度照常+1）" }}
+                </n-tooltip>
+                <n-button size="small" @click.stop="goChapter(ch.first_unit_id)">领读 / 阅读</n-button>
+              </div>
             </div>
           </n-list-item>
           <template v-if="expandedChapters.has(ch.first_unit_id)">
@@ -75,6 +92,21 @@
                   </n-tag>
                 </div>
                 <div class="unit-actions">
+                  <n-tooltip>
+                    <template #trigger>
+                      <n-button
+                        size="small"
+                        quaternary
+                        circle
+                        :type="unit.status === 'skipped' ? 'success' : 'default'"
+                        :disabled="skipBusy"
+                        @click="toggleSkip(unit)"
+                      >
+                        <n-icon><Checkmark /></n-icon>
+                      </n-button>
+                    </template>
+                    {{ unit.status === "skipped" ? "已标记无需掌握，点击取消" : "标记为无需掌握（不做题，进度照常+1）" }}
+                  </n-tooltip>
                   <n-button size="small" type="primary" @click="goQuiz(unit.id)">做题</n-button>
                 </div>
               </div>
@@ -90,7 +122,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ChevronForward } from "@vicons/ionicons5";
+import { Checkmark, ChevronForward } from "@vicons/ionicons5";
 import {
   NButton,
   NEmpty,
@@ -101,9 +133,10 @@ import {
   NSpace,
   NSpin,
   NTag,
+  NTooltip,
   useMessage,
 } from "naive-ui";
-import { api, type BookDetail, type ChapterGroup, type UnitStatus } from "../api";
+import { api, type BookDetail, type ChapterGroup, type Unit, type UnitStatus } from "../api";
 import { errText, fmtDate, percent } from "../utils";
 import { useLibraryStore } from "../stores/library";
 
@@ -155,12 +188,14 @@ onMounted(load);
 function statusType(status: UnitStatus): TagType {
   if (status === "reading") return "warning";
   if (status === "done") return "success";
+  if (status === "skipped") return "info";
   return "default";
 }
 
 function statusLabel(status: UnitStatus): string {
   if (status === "reading") return "在读";
   if (status === "done") return "已学";
+  if (status === "skipped") return "无需掌握";
   return "未读";
 }
 
@@ -173,7 +208,39 @@ function masteryType(mastery: number | null): TagType {
 }
 
 function doneCount(ch: ChapterGroup): number {
-  return ch.units.filter((u) => u.status === "done").length;
+  return ch.units.filter((u) => u.status === "done" || u.status === "skipped").length;
+}
+
+function chapterSkipped(ch: ChapterGroup): boolean {
+  return ch.units.length > 0 && ch.units.every((u) => u.status === "skipped");
+}
+
+const skipBusy = ref(false);
+
+async function toggleSkip(unit: Unit): Promise<void> {
+  if (skipBusy.value) return;
+  skipBusy.value = true;
+  try {
+    await api.setUnitSkipped(unit.id, unit.status !== "skipped");
+    await load();
+  } catch (e) {
+    message.error(`标记失败：${errText(e)}`);
+  } finally {
+    skipBusy.value = false;
+  }
+}
+
+async function toggleChapterSkip(ch: ChapterGroup): Promise<void> {
+  if (skipBusy.value) return;
+  skipBusy.value = true;
+  try {
+    await api.setChapterSkipped(ch.first_unit_id, !chapterSkipped(ch));
+    await load();
+  } catch (e) {
+    message.error(`标记失败：${errText(e)}`);
+  } finally {
+    skipBusy.value = false;
+  }
 }
 
 function goChapter(firstUnitId: number): void {
@@ -240,6 +307,13 @@ function goQuiz(unitId: number): void {
 }
 
 .chapter-progress {
+  flex-shrink: 0;
+}
+
+.chapter-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
 }
 

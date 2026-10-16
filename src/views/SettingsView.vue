@@ -62,6 +62,16 @@
           </div>
         </div>
       </div>
+      <div class="switch-row">
+        <n-switch v-model:value="form.disable_thinking" :disabled="loading" />
+        <div>
+          <div>关闭模型思考模式（提速）</div>
+          <div class="muted small">
+            默认关闭。开启后按接口地址识别厂商方言注入关思考参数：阿里系 enable_thinking=false、智谱/火山
+            thinking=disabled，未识别网关两种都带；DeepSeek 官方无参数可关，由模型名（chat/reasoner）决定。
+          </div>
+        </div>
+      </div>
       <n-button type="primary" class="save-behavior" :loading="saving" :disabled="loading" @click="onSave">
         保存
       </n-button>
@@ -102,6 +112,7 @@ const form = reactive<LlmSettings>({
   api_key: "",
   model: "",
   auto_start_reading: false,
+  disable_thinking: false,
 });
 const loading = ref(true);
 const loadError = ref<string | null>(null);
@@ -174,6 +185,10 @@ async function onTest(): Promise<void> {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+}
+
+.switch-row + .switch-row {
+  margin-top: 14px;
 }
 
 .save-behavior {

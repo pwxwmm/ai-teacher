@@ -7,6 +7,7 @@ export interface LlmSettings {
   api_key: string;
   model: string;
   auto_start_reading: boolean; // 打开全新章节时自动开始 AI 领读；默认 false
+  disable_thinking: boolean; // 关闭模型思考模式提速（按接口地址识别厂商方言）；默认 false
 }
 
 export interface ConnectionTestResult {
@@ -23,7 +24,7 @@ export interface BookSummary {
   done_units: number;
 }
 
-export type UnitStatus = "unread" | "reading" | "done";
+export type UnitStatus = "unread" | "reading" | "done" | "skipped";
 
 export interface Unit {
   id: number;
@@ -190,8 +191,16 @@ export const api = {
   askChapterSelection: (unitId: number, quote: string, question: string, onDelta?: (s: string) => void) =>
     call<string>("ask_chapter_selection", { unitId, quote, question, ...streamArg(onDelta) }),
 
+  // 无需掌握标记：计入进度、清待复习，可撤销；章级参数传章内任一 unitId（前端用章首节）
+  setUnitSkipped: (unitId: number, skipped: boolean) =>
+    call<void>("set_unit_skipped", { unitId, skipped }),
+  setChapterSkipped: (unitId: number, skipped: boolean) =>
+    call<void>("set_chapter_skipped", { unitId, skipped }),
+
   // 做题
   generateQuiz: (unitId: number) => call<QuizQuestion[]>("generate_quiz", { unitId }),
+  // 换一批新题：旧题退役不删除，错题本/复习记录保留
+  regenerateQuiz: (unitId: number) => call<QuizQuestion[]>("regenerate_quiz", { unitId }),
   submitAnswer: (questionId: number, givenAnswer: string) =>
     call<GradeResult>("submit_answer", { questionId, givenAnswer }),
   getQuestion: (questionId: number) => call<QuizQuestion>("get_question", { questionId }),

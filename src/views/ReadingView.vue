@@ -555,12 +555,14 @@ function goBack(): void {
 function statusType(status: UnitStatus): TagType {
   if (status === "reading") return "warning";
   if (status === "done") return "success";
+  if (status === "skipped") return "info";
   return "default";
 }
 
 function statusLabel(status: UnitStatus): string {
   if (status === "reading") return "在读";
   if (status === "done") return "已学";
+  if (status === "skipped") return "无需掌握";
   return "未读";
 }
 

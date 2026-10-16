@@ -45,6 +45,7 @@
           }}
         </div>
         <div class="summary-actions">
+          <n-button :loading="regenerating" @click="onRegenerate">换一批新题</n-button>
           <n-button :loading="goingBook" @click="goBookDetail">返回书籍详情</n-button>
           <n-button type="primary" @click="router.push('/today')">回到今日</n-button>
         </div>
@@ -96,6 +97,12 @@
         </n-alert>
 
         <div class="q-actions">
+          <n-popconfirm :disabled="regenerating" @positive-click="onRegenerate">
+            <template #trigger>
+              <n-button class="regen" quaternary :loading="regenerating">换一批新题</n-button>
+            </template>
+            换一批后这批题的作答进度将丢弃（旧题仍保留在错题本/复习中），确定换吗？
+          </n-popconfirm>
           <n-button
             v-if="result === null"
             type="primary"
@@ -123,6 +130,7 @@ import {
   NCard,
   NEmpty,
   NInput,
+  NPopconfirm,
   NProgress,
   NRadio,
   NRadioGroup,
@@ -151,6 +159,7 @@ const submitting = ref(false);
 const result = ref<GradeResult | null>(null);
 const correctCount = ref(0);
 const done = ref(false);
+const regenerating = ref(false);
 
 const bookId = ref<number | null>(null);
 const bookTitle = ref("");
@@ -224,6 +233,24 @@ function onNext(): void {
   }
 }
 
+// 换一批新题：旧题退役不删除（错题本/复习继续引用），本批作答进度清零重来
+async function onRegenerate(): Promise<void> {
+  if (regenerating.value || invalidId.value) return;
+  regenerating.value = true;
+  try {
+    questions.value = await api.regenerateQuiz(unitId.value);
+    idx.value = 0;
+    answer.value = "";
+    result.value = null;
+    correctCount.value = 0;
+    done.value = false;
+  } catch (e) {
+    message.error(`换一批失败：${errText(e)}`);
+  } finally {
+    regenerating.value = false;
+  }
+}
+
 async function goBookDetail(): Promise<void> {
   if (goingBook.value) return;
   goingBook.value = true;
@@ -282,6 +309,11 @@ async function goBookDetail(): Promise<void> {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+}
+
+.q-actions .regen {
+  margin-right: auto;
 }
 
 .score {

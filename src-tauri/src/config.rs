@@ -76,6 +76,7 @@ mod tests {
                 api_key: "sk-test".to_string(),
                 model: "my-model".to_string(),
                 auto_start_reading: true,
+                disable_thinking: true,
             })
             .unwrap();
         let s = store.load();
@@ -83,14 +84,16 @@ mod tests {
         assert_eq!(s.api_key, "sk-test");
         assert_eq!(s.model, "my-model");
         assert!(s.auto_start_reading);
+        assert!(s.disable_thinking);
 
-        // 缺字段的配置文件按默认值补全（含新加的 auto_start_reading=false）
+        // 缺字段的配置文件按默认值补全（含 auto_start_reading / disable_thinking）
         std::fs::write(dir.join("config.json"), r#"{"model":"m2"}"#).unwrap();
         let s = store.load();
         assert_eq!(s.model, "m2");
         assert_eq!(s.base_url, "https://api.deepseek.com");
         assert_eq!(s.api_key, "");
         assert!(!s.auto_start_reading);
+        assert!(!s.disable_thinking);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
