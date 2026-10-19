@@ -144,7 +144,12 @@
                 placeholder="就本章内容向 AI 伴读提问…"
                 :disabled="asking"
               />
-              <n-button type="primary" :loading="asking" :disabled="!question.trim()" @click="onAsk">
+              <n-button
+                type="primary"
+                :loading="asking"
+                @mousedown="commitComposingInput"
+                @click="onAsk"
+              >
                 提问
               </n-button>
             </div>
@@ -203,12 +208,12 @@
         <n-input
           v-model:value="askQuestion"
           :placeholder="askRounds.length > 0 ? '就这段内容继续追问…' : '想问 AI 伴读什么？'"
-          @keyup.enter="onAskSubmit"
+          @keydown.enter="onAskEnter"
         />
         <n-button
           type="primary"
           :loading="askStreaming"
-          :disabled="!askQuestion.trim() || askStreaming"
+          @mousedown="commitComposingInput"
           @click="onAskSubmit"
         >
           {{ askRounds.length > 0 ? "追问" : "提问" }}
@@ -235,7 +240,7 @@ import {
   useMessage,
 } from "naive-ui";
 import { api, type ChapterContent, type ChapterSegment, type ReadingSession, type UnitStatus } from "../api";
-import { errText } from "../utils";
+import { commitComposingInput, errText } from "../utils";
 
 interface QA {
   q: string;
@@ -447,7 +452,11 @@ async function startReading(): Promise<void> {
 
 async function onAsk(): Promise<void> {
   const q = question.value.trim();
-  if (!q || asking.value || invalidId.value) return;
+  if (!q) {
+    message.warning("请先输入问题");
+    return;
+  }
+  if (asking.value || invalidId.value) return;
   const entry = reactive<QA>({ q, rawText: "", html: "", error: null });
   history.value.push(entry);
   question.value = "";
@@ -541,9 +550,19 @@ async function askRound(q: string): Promise<void> {
 
 function onAskSubmit(): void {
   const q = askQuestion.value.trim();
-  if (!q || askStreaming.value) return;
+  if (!q) {
+    message.warning("请先输入问题");
+    return;
+  }
+  if (askStreaming.value) return;
   askQuestion.value = "";
   void askRound(q);
+}
+
+// 回车提交只认"真正的"回车：输入法候选词确认的回车（isComposing / keyCode 229）不算
+function onAskEnter(e: KeyboardEvent): void {
+  if (e.isComposing || e.keyCode === 229) return;
+  onAskSubmit();
 }
 
 function goBack(): void {

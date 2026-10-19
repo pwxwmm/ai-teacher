@@ -60,7 +60,6 @@ fixtures/demo-book.md # 端到端与测试用的示例书（3 章）
 - 单元全部题目都答过 → status=done，mastery=每题最近一次答题的正确率
 - 测验结果页去向：错题过半（含一半）显示"建议回本章重读"警告 + 一键跳 `/reading/:unitId` 按钮，全对仅庆祝文案、不给重读入口
 - 出题量按单元正文字数浮动（`llm.rs plan_quiz`：约每 500 字 1 题、3–8 题封顶、单选:简答≈3:2），不固定 5 题；mock 出题同规则，测试 `setup_unit` 正文 2550 字即对应 5 题
-- 测验结果页去向：错题过半（含一半）显示"建议回本章重读"警告 + 一键跳 `/reading/:unitId` 按钮，全对仅庆祝文案、不给重读入口
 - 单元状态 skipped（无需掌握）：书详情页章/小节 ✔ 标记（`set_unit_skipped`/`set_chapter_skipped`），进度 done_units 计入 done+skipped、标记时删除该单元复习项；领读不回退（`ensure_unit_registered` 仅 unread→reading）、重新出题回退 reading、答完全部题转 done；取消标记回 unread、复习项随下次领读幂等重建
 - 重新出题（`regenerate_quiz`）：旧题整批退役**不删除**（`quiz_batches` 表记活跃批次边界 id，`list_questions`/`count_questions`/`latest_attempts` 只看当前批次），错题本/复习项/作答记录继续引用旧题、重练照旧；单元已 done/skipped 则退回 reading 并清空 mastery，新批次答完重算
 - 复习通过/失败都走 `scheduler.next_schedule` 更新 ease/reps/interval/due_date，条目永不删除
