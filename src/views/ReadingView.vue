@@ -105,7 +105,7 @@
             </template>
             <div v-if="reading && !explainText" class="center-box small-pad">
               <n-spin size="medium" />
-              <span class="muted">AI 老师正在为你领读本章…</span>
+              <span class="muted">AI 伴读正在为你领读本章…</span>
             </div>
             <template v-else>
               <n-alert v-if="readError" type="error" title="领读失败">
@@ -126,10 +126,10 @@
                   </n-tag>
                 </div>
                 <div class="md" v-html="explanationHtml"></div>
-                <div v-if="reading" class="stream-hint muted small">AI 老师正在领读本章…</div>
+                <div v-if="reading" class="stream-hint muted small">AI 伴读正在领读本章…</div>
               </template>
               <div v-else-if="!readError" class="center-box small-pad">
-                <span class="muted">让 AI 老师带你通读整章，梳理脉络、划出重点</span>
+                <span class="muted">让 AI 伴读带你通读整章，梳理脉络、划出重点</span>
                 <n-button type="primary" @click="startReading">开始领读</n-button>
               </div>
             </template>
@@ -141,7 +141,7 @@
                 v-model:value="question"
                 type="textarea"
                 :autosize="{ minRows: 1, maxRows: 4 }"
-                placeholder="就本章内容向 AI 老师提问…"
+                placeholder="就本章内容向 AI 伴读提问…"
                 :disabled="asking"
               />
               <n-button type="primary" :loading="asking" :disabled="!question.trim()" @click="onAsk">
@@ -157,7 +157,7 @@
                     <div v-if="qa.html" class="md" v-html="qa.html"></div>
                     <div v-else-if="!qa.error" class="qa-typing">
                       <n-spin size="small" />
-                      <span class="muted small">AI 老师正在思考…</span>
+                      <span class="muted small">AI 伴读正在思考…</span>
                     </div>
                     <div v-if="qa.error" class="qa-error small">提问失败：{{ qa.error }}</div>
                   </div>
@@ -194,7 +194,7 @@
           <div v-if="r.html" class="md" v-html="r.html"></div>
           <div v-else-if="!r.error" class="qa-typing">
             <n-spin size="small" />
-            <span class="muted small">AI 老师正在思考…</span>
+            <span class="muted small">AI 伴读正在思考…</span>
           </div>
           <div v-if="r.error" class="qa-error small">提问失败：{{ r.error }}</div>
         </div>
@@ -202,7 +202,7 @@
       <div class="ask-row modal-ask-row">
         <n-input
           v-model:value="askQuestion"
-          :placeholder="askRounds.length > 0 ? '就这段内容继续追问…' : '想问 AI 老师什么？'"
+          :placeholder="askRounds.length > 0 ? '就这段内容继续追问…' : '想问 AI 伴读什么？'"
           @keyup.enter="onAskSubmit"
         />
         <n-button

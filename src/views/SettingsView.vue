@@ -78,7 +78,7 @@
     </n-card>
 
     <n-card title="关于" class="about-card">
-      <div class="muted small">AI 老师 v{{ BUILD_VERSION }}</div>
+      <div class="muted small">AI 伴读 v{{ BUILD_VERSION }}</div>
       <div class="muted small">构建 {{ BUILD_HASH }} · {{ BUILD_TIME }}</div>
       <div class="muted small">
         用构建信息对照最新代码是否已生效；学习数据保存在本机应用数据目录，覆盖安装或升级不会丢失进度。
