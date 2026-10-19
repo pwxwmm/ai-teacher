@@ -1,4 +1,4 @@
-# AGENTS.md — AI 老师
+# AGENTS.md — AI 伴读
 
 桌面学习应用：导入书（md/txt/epub/pdf）→ AI 领读 → 做题 → SM-2 间隔复习。Tauri v2（Rust 后端）+ Vue 3 前端。
 
@@ -44,7 +44,7 @@ src-tauri/src/
 ├── lib.rs            # 入口：注册 dialog 插件、AppState、26 个命令
 ├── commands.rs       # Tauri 命令薄壳 + 可测试的 *_impl 业务逻辑
 ├── models.rs         # API 类型（serde snake_case）
-├── db.rs             # SQLite 迁移与查询（仅建表不 ALTER；含 learning_log/unit_summaries/chapter_explanations/quiz_batches；测试用 open_in_memory）
+├── db.rs             # SQLite 迁移与查询（仅建表不 ALTER；确需修改已有表的列时，必须在提交说明中注明原因；含 learning_log/unit_summaries/chapter_explanations/quiz_batches；测试用 open_in_memory）
 ├── config.rs         # app_data_dir/config.json（api_key、auto_start_reading、disable_thinking 等，勿入库勿进 git；新字段靠 serde default 兼容旧文件）
 ├── ingest.rs         # 书籍解析与 1500–3000 字单元切分；EPUB 插图抽到 books/<id>/images/，正文插 `![alt](文件名)` 标记段，前端原位渲染
 ├── llm.rs            # OpenAI 兼容客户端 + 中文 prompt + mock 模式（长文本输出走 SSE 流式；disable_thinking 开关注入关思考参数，厂商方言见 thinking_off_params）
@@ -58,6 +58,8 @@ fixtures/demo-book.md # 端到端与测试用的示例书（3 章）
 - 章（大节）= 阅读/领读单位，单元（小节）= 做题/复习单位：章节归属**不入库**，读时现算——优先重解析源文件的目录层级（EPUB NCX/nav 顶层条目为大节，`parse_file_grouped` + `unit_group_titles` 用与导入相同的切分确定性对齐单元序），源文件缺失/单元数失配时回退按单元标题推导（去"（N）"后缀）；连续聚合 + 超 3 万字强制拆段见 `group_units_into_chapters`；章级命令 `get_chapter_content`/`start_chapter_reading`/`ask_chapter`/`ask_chapter_selection` 参数仍是 unit_id（后端解析所属章）；章领读对章内每节幂等登记（与单元领读共用 `ensure_unit_registered`），章正文喂 LLM 超 1.5 万字取头尾（`cap_llm_input`）；章领读讲解持久化于 `chapter_explanations` 表（键=章首节 unit_id，重开页面直接展示，"重新领读"覆盖）；阅读页翻章入口 = 两侧悬浮箭头（sticky 钉在视口中线、半透明悬停显形，首/末章单侧隐藏）/ ←→ 键 / 双指横滑（wheel deltaX 累计 200px 或触屏位移 70px，1s 冷却，均走 `goChapter`，见 ReadingView.vue）；侧边栏"继续阅读"= localStorage 记录的最近阅读路由（`App.vue`，键 `ai-teacher:last-reading`）
 - 注意：`pnpm build` 只产出前端 dist，桌面应用必须 `pnpm tauri dev`/build 才会带上新前后端；判断当前应用是哪次构建 → 设置页底部"关于"显示 v版本 + git 短哈希（有未提交改动带 `-dirty`）+ 构建时间（vite.config.ts `define.__BUILD_INFO__` 注入，前端读 `src/build-info.ts`）
 - 单元全部题目都答过 → status=done，mastery=每题最近一次答题的正确率
+- 出题量按单元正文字数浮动（`llm.rs plan_quiz`：约每 500 字 1 题、3–8 题封顶、单选:简答≈3:2），不固定 5 题；mock 出题同规则，测试 `setup_unit` 正文 2550 字即对应 5 题
+- 测验结果页去向：错题过半（含一半）显示"建议回本章重读"警告 + 一键跳 `/reading/:unitId` 按钮，全对仅庆祝文案、不给重读入口
 - 单元状态 skipped（无需掌握）：书详情页章/小节 ✔ 标记（`set_unit_skipped`/`set_chapter_skipped`），进度 done_units 计入 done+skipped、标记时删除该单元复习项；领读不回退（`ensure_unit_registered` 仅 unread→reading）、重新出题回退 reading、答完全部题转 done；取消标记回 unread、复习项随下次领读幂等重建
 - 重新出题（`regenerate_quiz`）：旧题整批退役**不删除**（`quiz_batches` 表记活跃批次边界 id，`list_questions`/`count_questions`/`latest_attempts` 只看当前批次），错题本/复习项/作答记录继续引用旧题、重练照旧；单元已 done/skipped 则退回 reading 并清空 mastery，新批次答完重算
 - 复习通过/失败都走 `scheduler.next_schedule` 更新 ease/reps/interval/due_date，条目永不删除
@@ -65,4 +67,5 @@ fixtures/demo-book.md # 端到端与测试用的示例书（3 章）
 - 领读上下文：单元首次领读时生成摘要存 `unit_summaries`（幂等）；领读/答疑带前一单元摘要，无摘要降级为它标题 + 开头摘录
 - 错题状态无独立字段：从 attempts 按题最近一次记录派生（有答错记录即入错题本，最近答对即"已解决"），重练直接复用 `submit_answer`
 - 今日统计源自 `learning_log`（一行一事件：答题记 'answer'、复习记 'review'）：今日已复习 x/y = 今日复习数 /（今日复习数+剩余到期数），连续天数从今天（无记录则昨天）往回数
+- 前端输入+按钮的统一模式（勿回退）：提交/提问按钮不写 `:disabled="!x.trim()"` 锁空值，改绑 `@mousedown="commitComposingInput"`（utils.ts）+ 点击时空值 `message.warning`——中文输入法组词期间 naive-ui 不更新 v-model（`handleInput` 里 isComposing 直接 return），按钮若因旧值禁用，第一次点击只被用来上屏组词、事件被吞，必须点两次；回车提交用 `@keydown.enter` 且过滤 `isComposing || keyCode === 229`（候选词确认的回车不算提交）
 - 业务规则集中且要测：写测试走 `*_impl` + 内存 DB + mock LLM，不依赖 Tauri 运行时和网络
