@@ -5,7 +5,12 @@
         <h2 class="page-title">今日学习</h2>
         <div class="page-subtitle">完成到期复习，继续学习新单元</div>
       </div>
-      <n-button quaternary size="small" @click="refresh">刷新</n-button>
+      <n-button quaternary size="small" @click="refresh">
+        <template #icon>
+          <n-icon size="16"><RefreshOutline /></n-icon>
+        </template>
+        刷新
+      </n-button>
     </div>
 
     <div v-if="plan" class="stats muted small">
@@ -166,10 +171,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { RefreshOutline } from "@vicons/ionicons5";
 import {
   NAlert,
   NButton,
   NEmpty,
+  NIcon,
   NInput,
   NList,
   NListItem,

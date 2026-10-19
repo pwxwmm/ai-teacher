@@ -10,7 +10,7 @@
           </n-button>
         </div>
       </n-layout-sider>
-      <n-layout-content class="main">
+      <n-layout-content ref="mainRef" class="main">
         <router-view />
       </n-layout-content>
     </n-layout>
@@ -18,7 +18,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   BookmarkOutline,
@@ -102,6 +102,17 @@ const showContinue = computed(
 function goContinueReading(): void {
   if (lastReading.value) router.push(lastReading.value);
 }
+
+// 换页时把主内容区滚回顶部：滚动容器 .main 为所有页面共享，长页滚到底再进短页时
+// 旧滚动位置会把新页内容顶出视口（表现为"点去做题白屏"）
+const mainRef = ref<InstanceType<typeof NLayoutContent> | null>(null);
+watch(
+  () => route.fullPath,
+  async () => {
+    await nextTick();
+    (mainRef.value?.$el as HTMLElement | undefined)?.scrollTo({ top: 0 });
+  },
+);
 </script>
 
 <style scoped>

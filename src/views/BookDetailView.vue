@@ -58,13 +58,16 @@
                   <template #trigger>
                     <n-button
                       size="small"
-                      quaternary
+                      secondary
                       circle
                       :type="chapterSkipped(ch) ? 'success' : 'default'"
                       :disabled="skipBusy"
                       @click.stop="toggleChapterSkip(ch)"
                     >
-                      <n-icon><Checkmark /></n-icon>
+                      <n-icon size="16">
+                        <CheckmarkCircle v-if="chapterSkipped(ch)" />
+                        <CheckmarkCircleOutline v-else />
+                      </n-icon>
                     </n-button>
                   </template>
                   {{ chapterSkipped(ch) ? "整章已标记无需掌握，点击取消" : "整章标记为无需掌握（不做题，进度照常+1）" }}
@@ -96,13 +99,16 @@
                     <template #trigger>
                       <n-button
                         size="small"
-                        quaternary
+                        secondary
                         circle
                         :type="unit.status === 'skipped' ? 'success' : 'default'"
                         :disabled="skipBusy"
                         @click="toggleSkip(unit)"
                       >
-                        <n-icon><Checkmark /></n-icon>
+                        <n-icon size="16">
+                          <CheckmarkCircle v-if="unit.status === 'skipped'" />
+                          <CheckmarkCircleOutline v-else />
+                        </n-icon>
                       </n-button>
                     </template>
                     {{ unit.status === "skipped" ? "已标记无需掌握，点击取消" : "标记为无需掌握（不做题，进度照常+1）" }}
@@ -122,7 +128,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Checkmark, ChevronForward } from "@vicons/ionicons5";
+import { CheckmarkCircle, CheckmarkCircleOutline, ChevronForward } from "@vicons/ionicons5";
 import {
   NButton,
   NEmpty,
@@ -217,12 +223,26 @@ function chapterSkipped(ch: ChapterGroup): boolean {
 
 const skipBusy = ref(false);
 
+// 与后端 set_unit_skipped_impl 语义一致：标记置 skipped、取消回 unread，两者都清掌握度；
+// done_units 口径是 done+skipped，按前后状态折算增量。成功后只改本地数据，不重新拉取，页面位置不动。
+function applySkipLocally(unit: Unit, skipped: boolean): void {
+  const wasCounted = unit.status === "done" || unit.status === "skipped";
+  unit.status = skipped ? "skipped" : "unread";
+  unit.mastery = null;
+  const delta = (skipped ? 1 : 0) - (wasCounted ? 1 : 0);
+  if (detail.value && delta !== 0) {
+    detail.value.book.done_units += delta;
+  }
+}
+
 async function toggleSkip(unit: Unit): Promise<void> {
   if (skipBusy.value) return;
+  const skipped = unit.status !== "skipped";
   skipBusy.value = true;
   try {
-    await api.setUnitSkipped(unit.id, unit.status !== "skipped");
-    await load();
+    await api.setUnitSkipped(unit.id, skipped);
+    applySkipLocally(unit, skipped);
+    library.upsert(detail.value!.book);
   } catch (e) {
     message.error(`标记失败：${errText(e)}`);
   } finally {
@@ -232,10 +252,12 @@ async function toggleSkip(unit: Unit): Promise<void> {
 
 async function toggleChapterSkip(ch: ChapterGroup): Promise<void> {
   if (skipBusy.value) return;
+  const skipped = !chapterSkipped(ch);
   skipBusy.value = true;
   try {
-    await api.setChapterSkipped(ch.first_unit_id, !chapterSkipped(ch));
-    await load();
+    await api.setChapterSkipped(ch.first_unit_id, skipped);
+    ch.units.forEach((u) => applySkipLocally(u, skipped));
+    library.upsert(detail.value!.book);
   } catch (e) {
     message.error(`标记失败：${errText(e)}`);
   } finally {

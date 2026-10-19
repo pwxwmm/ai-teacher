@@ -1,7 +1,9 @@
 <template>
   <div class="page">
     <div v-if="loading" class="center-box tall">
-      <n-spin size="large" description="AI 正在出题…" />
+      <n-spin size="large" />
+      <div class="loading-title">AI 正在出题…</div>
+      <div class="muted small">首次出题需要模型通读单元并生成题目，可能要等十几到几十秒，请耐心等待</div>
     </div>
 
     <n-empty v-else-if="error" description="出题失败">
@@ -44,10 +46,22 @@
             correctCount === questions.length ? "，全对，太棒了！" : "，错题会在复习中再次出现。"
           }}
         </div>
+        <n-alert v-if="needReread" class="summary-alert" type="warning" title="建议回本章重读">
+          本次错题过半（{{ questions.length - correctCount }}/{{ questions.length }}），建议先回本章把内容再读一遍；错题同时会按计划安排复习。
+        </n-alert>
         <div class="summary-actions">
+          <n-button
+            v-if="needReread"
+            type="primary"
+            @click="router.push(`/reading/${unitId}`)"
+          >
+            回本章重读
+          </n-button>
           <n-button :loading="regenerating" @click="onRegenerate">换一批新题</n-button>
           <n-button :loading="goingBook" @click="goBookDetail">返回书籍详情</n-button>
-          <n-button type="primary" @click="router.push('/today')">回到今日</n-button>
+          <n-button :type="needReread ? 'default' : 'primary'" @click="router.push('/today')">
+            回到今日
+          </n-button>
         </div>
       </n-card>
     </template>
@@ -58,13 +72,18 @@
           <h2 class="page-title">单元闯关</h2>
           <div v-if="bookTitle" class="page-subtitle">《{{ bookTitle }}》{{ unitTitle }}</div>
         </div>
-        <n-tag size="small" round>第 {{ idx + 1 }} / {{ questions.length }} 题</n-tag>
+        <div class="header-side">
+          <n-popconfirm :disabled="regenerating" @positive-click="onRegenerate">
+            <template #trigger>
+              <n-button size="small" quaternary :loading="regenerating">换一批新题</n-button>
+            </template>
+            换一批后这批题的作答进度将丢弃（旧题仍保留在错题本/复习中），确定换吗？
+          </n-popconfirm>
+          <n-tag size="small" round>第 {{ idx + 1 }} / {{ questions.length }} 题</n-tag>
+        </div>
       </div>
 
       <n-card v-if="current">
-        <div class="q-kp">
-          <n-tag type="info" size="small" :bordered="false">考点：{{ current.knowledge_point }}</n-tag>
-        </div>
         <div class="q-stem">{{ current.stem }}</div>
 
         <n-radio-group
@@ -90,6 +109,9 @@
           :type="result.correct ? 'success' : 'error'"
           :title="result.correct ? '回答正确' : '回答错误'"
         >
+          <div class="q-line q-kp-result">
+            <n-tag type="info" size="small" :bordered="false">考点：{{ current.knowledge_point }}</n-tag>
+          </div>
           <div v-if="result.reference_answer" class="q-line">
             <b>参考答案：</b>{{ result.reference_answer }}
           </div>
@@ -97,17 +119,11 @@
         </n-alert>
 
         <div class="q-actions">
-          <n-popconfirm :disabled="regenerating" @positive-click="onRegenerate">
-            <template #trigger>
-              <n-button class="regen" quaternary :loading="regenerating">换一批新题</n-button>
-            </template>
-            换一批后这批题的作答进度将丢弃（旧题仍保留在错题本/复习中），确定换吗？
-          </n-popconfirm>
           <n-button
             v-if="result === null"
             type="primary"
             :loading="submitting"
-            :disabled="!answer.trim()"
+            @mousedown="commitComposingInput"
             @click="onSubmit"
           >
             提交
@@ -140,7 +156,7 @@ import {
   useMessage,
 } from "naive-ui";
 import { api, type GradeResult, type QuizQuestion } from "../api";
-import { errText, percent } from "../utils";
+import { commitComposingInput, errText, percent } from "../utils";
 
 const route = useRoute();
 const router = useRouter();
@@ -168,6 +184,12 @@ const goingBook = ref(false);
 
 const current = computed(() => questions.value[idx.value] ?? null);
 const isLast = computed(() => idx.value === questions.value.length - 1);
+// 错题过半（含一半）→ 结果页给出"回本章重读"入口；全对则无需重看
+const needReread = computed(
+  () =>
+    questions.value.length > 0 &&
+    (questions.value.length - correctCount.value) * 2 >= questions.value.length,
+);
 
 async function loadUnitInfo(): Promise<void> {
   if (invalidId.value) return;
@@ -210,7 +232,11 @@ onMounted(() => {
 
 async function onSubmit(): Promise<void> {
   const q = current.value;
-  if (!q || submitting.value || result.value !== null || !answer.value.trim()) return;
+  if (!q || submitting.value || result.value !== null) return;
+  if (!answer.value.trim()) {
+    message.warning("请先输入答案");
+    return;
+  }
   submitting.value = true;
   try {
     result.value = await api.submitAnswer(q.id, answer.value);
@@ -275,8 +301,13 @@ async function goBookDetail(): Promise<void> {
   padding: 100px 0;
 }
 
-.q-kp {
-  margin-bottom: 12px;
+.loading-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.q-kp-result {
+  margin-bottom: 8px;
 }
 
 .q-stem {
@@ -312,8 +343,10 @@ async function goBookDetail(): Promise<void> {
   align-items: center;
 }
 
-.q-actions .regen {
-  margin-right: auto;
+.header-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .score {
@@ -343,6 +376,10 @@ async function goBookDetail(): Promise<void> {
 .summary-hint {
   text-align: center;
   margin-top: 12px;
+}
+
+.summary-alert {
+  margin-top: 16px;
 }
 
 .summary-actions {
