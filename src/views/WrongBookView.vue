@@ -5,7 +5,12 @@
         <h2 class="page-title">错题本</h2>
         <div class="page-subtitle">集中重练答错的题目，直到全部解决</div>
       </div>
-      <n-button quaternary size="small" @click="reload">刷新</n-button>
+      <n-button quaternary size="small" @click="reload">
+        <template #icon>
+          <n-icon size="16"><RefreshOutline /></n-icon>
+        </template>
+        刷新
+      </n-button>
     </div>
 
     <n-empty
@@ -138,7 +143,7 @@
             v-if="!practiceResult || !practiceResult.correct"
             type="primary"
             :loading="grading"
-            :disabled="!practiceAnswer.trim()"
+            @mousedown="commitComposingInput"
             @click="onPracticeSubmit"
           >
             提交答案
@@ -153,11 +158,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { RefreshOutline } from "@vicons/ionicons5";
 import {
   NAlert,
   NButton,
   NCheckbox,
   NEmpty,
+  NIcon,
   NInput,
   NList,
   NListItem,
@@ -170,7 +177,7 @@ import {
   useMessage,
 } from "naive-ui";
 import { api, type GradeResult, type QuizQuestion, type WrongQuestion } from "../api";
-import { errText, fmtDate } from "../utils";
+import { commitComposingInput, errText, fmtDate } from "../utils";
 import { useLibraryStore } from "../stores/library";
 
 const router = useRouter();
@@ -268,7 +275,11 @@ function retryPractice(): void {
 
 async function onPracticeSubmit(): Promise<void> {
   const q = practiceQ.value;
-  if (!q || grading.value || !practiceAnswer.value.trim()) return;
+  if (!q || grading.value) return;
+  if (!practiceAnswer.value.trim()) {
+    message.warning("请先输入答案");
+    return;
+  }
   grading.value = true;
   try {
     practiceResult.value = await api.submitAnswer(q.id, practiceAnswer.value);
