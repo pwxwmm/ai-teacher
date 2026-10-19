@@ -1096,10 +1096,11 @@ mod tests {
     }
 
     /// 建一本书、一个单元，单元正文写到临时文件。
+    /// 正文 2550 字：按"约每 500 字 1 题"的规则正好 5 题，与既有断言一致。
     fn setup_unit(tag: &str) -> (Db, PathBuf, i64) {
         let dir = temp_dir(tag);
         let db = Db::open_in_memory().unwrap();
-        let content = "学习内容：记忆的编码、存储与提取。".repeat(60);
+        let content = "学习内容：记忆的编码、存储与提取。".repeat(150);
         let file = dir.join("unit_0.txt");
         std::fs::write(&file, &content).unwrap();
         let book_id = db
@@ -1364,6 +1365,37 @@ mod tests {
         assert!(due.iter().any(|i| i.question_id == Some(mcq[1].id)));
         assert!(due.iter().any(|i| i.question_id == Some(short[0].id)));
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 题量随单元正文字数浮动（约每 500 字 1 题，3–8 题封顶），不再固定 5 题
+    #[tokio::test]
+    async fn quiz_count_scales_with_unit_length() {
+        std::env::set_var("AI_TEACHER_MOCK_LLM", "1");
+        let dir = temp_dir("quiz-count");
+        let db = Db::open_in_memory().unwrap();
+        let settings = LlmSettings::default();
+        let book_id = db
+            .insert_book("测试书", "/tmp/测试书.md", "md", "2026-10-06")
+            .unwrap();
+        // (字数, 期望总题数, 期望单选数)：680 字 → 3 题；2550 字 → 5 题；4420 字 → 8 题（封顶）
+        for (i, (chars, want_total, want_mcq)) in
+            [(680, 3, 2), (2550, 5, 3), (4420, 8, 5)].into_iter().enumerate()
+        {
+            let file = dir.join(format!("unit_{i}.txt"));
+            std::fs::write(&file, "学".repeat(chars)).unwrap();
+            let unit_id = db
+                .insert_unit(book_id, i as i64, "第一章", file.to_string_lossy().as_ref())
+                .unwrap();
+            let questions = generate_quiz_impl(&db, &settings, unit_id)
+                .await
+                .unwrap();
+            assert_eq!(questions.len(), want_total, "{chars} 字单元应出 {want_total} 题");
+            assert_eq!(
+                questions.iter().filter(|q| q.qtype == QType::Mcq).count(),
+                want_mcq
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
