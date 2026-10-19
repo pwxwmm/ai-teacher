@@ -24,3 +24,37 @@ export function commitComposingInput(): void {
   const el = document.activeElement;
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) el.blur();
 }
+
+function moveHomeEndCaret(e: KeyboardEvent): void {
+  if (e.key !== "Home" && e.key !== "End") return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+  const el = e.target;
+  if (!(el instanceof HTMLTextAreaElement) && !(el instanceof HTMLInputElement)) return;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  if (start === null || end === null) return;
+  e.preventDefault();
+  const active = el.selectionDirection === "backward" ? start : end;
+  const value = el.value;
+  let next: number;
+  if (e.key === "Home") {
+    next = value.lastIndexOf("\n", active - 1) + 1;
+  } else {
+    const nl = value.indexOf("\n", active);
+    next = nl === -1 ? value.length : nl;
+  }
+  if (e.shiftKey) {
+    const anchor = el.selectionDirection === "backward" ? end : start;
+    el.setSelectionRange(
+      Math.min(anchor, next),
+      Math.max(anchor, next),
+      next < anchor ? "backward" : "forward",
+    );
+  } else {
+    el.setSelectionRange(next, next);
+  }
+}
+
+export function installHomeEndKeys(): void {
+  window.addEventListener("keydown", moveHomeEndCaret);
+}
