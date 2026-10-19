@@ -453,13 +453,23 @@ pub struct QuizDraft {
     pub knowledge_point: String,
 }
 
+/// 按单元正文字数规划题量：约每 500 字 1 题，夹在 3..=8 题；单选:简答 ≈ 3:2。
+/// 返回 (单选题数, 简答题数)。
+pub fn plan_quiz(chars: usize) -> (usize, usize) {
+    let total = (chars / 500).clamp(3, 8);
+    let mcq = (total * 3 + 2) / 5;
+    (mcq, total - mcq)
+}
+
 pub async fn make_quiz(
     settings: &LlmSettings,
     unit_text: &str,
     knowledge_points: &[String],
 ) -> Result<Vec<RawQuizQuestion>, String> {
+    let (mcq_n, short_n) = plan_quiz(unit_text.chars().count());
+    let total = mcq_n + short_n;
     let raw = if is_mock_enabled() {
-        mock_quiz_json(knowledge_points)
+        mock_quiz_json(knowledge_points, mcq_n, short_n)
     } else {
         let kps = if knowledge_points.is_empty() {
             "（未提供）".to_string()
@@ -473,8 +483,8 @@ pub async fn make_quiz(
             vec![
                 ChatMessage::system("你是一位严谨的中文出题老师，只输出 JSON。"),
                 ChatMessage::user(&format!(
-                    "请基于下面的学习内容和知识点，出一套共 5 道题的中文测验：3 道单选题和 2 道简答题。\
-                     严格只输出一个 JSON 数组，共 5 个对象，每个对象的字段为：\n\
+                    "请基于下面的学习内容和知识点，出一套共 {total} 道题的中文测验：{mcq_n} 道单选题和 {short_n} 道简答题。\
+                     严格只输出一个 JSON 数组，共 {total} 个对象，每个对象的字段为：\n\
                      qtype：\"mcq\"（单选）或 \"short\"（简答）；\n\
                      stem：题干；\n\
                      options：单选题为恰好 4 个选项（形如 \"A. xxx\"），简答题为空数组；\n\
@@ -554,7 +564,7 @@ pub fn normalize_quiz(raw: &[RawQuizQuestion]) -> Option<Vec<QuizDraft>> {
     Some(out)
 }
 
-fn mock_quiz_json(knowledge_points: &[String]) -> String {
+fn mock_quiz_json(knowledge_points: &[String], mcq_n: usize, short_n: usize) -> String {
     let kp = |i: usize| -> String {
         knowledge_points
             .get(i)
@@ -567,9 +577,9 @@ fn mock_quiz_json(knowledge_points: &[String]) -> String {
     };
     let letters = ["A", "B", "C", "D"];
     let mut questions = Vec::new();
-    for i in 0..3 {
+    for i in 0..mcq_n {
         let k = kp(i);
-        let correct = letters[i];
+        let correct = letters[i % 4];
         questions.push(serde_json::json!({
             "qtype": "mcq",
             "stem": format!("关于「{k}」，下列说法正确的是哪一项？"),
@@ -579,7 +589,7 @@ fn mock_quiz_json(knowledge_points: &[String]) -> String {
             "knowledge_point": k,
         }));
     }
-    for i in 0..2 {
+    for i in 0..short_n {
         let k = kp(i);
         questions.push(serde_json::json!({
             "qtype": "short",
@@ -859,7 +869,10 @@ mod tests {
     async fn mock_quiz_shape() {
         std::env::set_var("AI_TEACHER_MOCK_LLM", "1");
         let kps = vec!["阿尔法".to_string(), "贝塔".to_string(), "伽马".to_string()];
-        let raw = make_quiz(&mock_settings(), "内容", &kps).await.unwrap();
+        // 2600 字 → 5 题（3 单选 + 2 简答），与旧固定题量一致
+        let raw = make_quiz(&mock_settings(), &"内".repeat(2600), &kps)
+            .await
+            .unwrap();
         assert_eq!(raw.len(), 5);
         assert_eq!(raw.iter().filter(|q| q.qtype == "mcq").count(), 3);
         assert_eq!(raw.iter().filter(|q| q.qtype == "short").count(), 2);
@@ -878,9 +891,21 @@ mod tests {
     #[tokio::test]
     async fn mock_quiz_without_knowledge_points() {
         std::env::set_var("AI_TEACHER_MOCK_LLM", "1");
-        let raw = make_quiz(&mock_settings(), "内容", &[]).await.unwrap();
+        let raw = make_quiz(&mock_settings(), &"内".repeat(2600), &[])
+            .await
+            .unwrap();
         assert_eq!(raw.len(), 5);
         assert!(normalize_quiz(&raw).is_some());
+    }
+
+    #[test]
+    fn quiz_plan_scales_with_length() {
+        assert_eq!(plan_quiz(0), (2, 1)); // 下限 3 题
+        assert_eq!(plan_quiz(1499), (2, 1));
+        assert_eq!(plan_quiz(2000), (2, 2)); // 4 题
+        assert_eq!(plan_quiz(2550), (3, 2)); // 5 题，与旧固定值一致
+        assert_eq!(plan_quiz(3000), (4, 2)); // 6 题
+        assert_eq!(plan_quiz(5100), (5, 3)); // 上限 8 题
     }
 
     #[tokio::test]
