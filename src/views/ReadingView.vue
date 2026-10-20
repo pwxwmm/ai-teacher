@@ -14,78 +14,104 @@
 
     <template v-else-if="chapter">
       <div class="reading-main">
-        <div class="main-col">
-          <div class="page-header">
-            <div>
-              <h2 class="page-title">{{ chapter.chapter_title }}</h2>
-              <div class="page-subtitle">
-                来自《{{ chapter.book_title }}》· 第 {{ chapter.chapter_number }}/{{
-                  chapter.chapter_count
-                }}
-                章 · AI 领读
-              </div>
-            </div>
-            <div class="chapter-nav">
-              <n-button
-                size="small"
-                :disabled="!chapter.prev_chapter_unit_id"
-                @click="goChapter(chapter.prev_chapter_unit_id)"
-              >
-                ← 上一章
-              </n-button>
-              <n-button
-                size="small"
-                :disabled="!chapter.next_chapter_unit_id"
-                @click="goChapter(chapter.next_chapter_unit_id)"
-              >
-                下一章 →
-              </n-button>
-            </div>
+        <div ref="mainColEl" class="main-col">
+          <!-- 翻章箭头：贴正文列左右外缘、钉在视口中线，左右位置由 colRect 实测写入 -->
+          <div
+            v-if="chapter.prev_chapter_unit_id"
+            class="side-arrow left"
+            :style="{ left: colRect.left + 'px' }"
+            title="上一章（←）"
+            role="button"
+            aria-label="上一章"
+            @click="goChapter(chapter.prev_chapter_unit_id)"
+          >
+            ‹
+          </div>
+          <div
+            v-if="chapter.next_chapter_unit_id"
+            class="side-arrow right"
+            :style="{ right: colRect.right + 'px' }"
+            title="下一章（→）"
+            role="button"
+            aria-label="下一章"
+            @click="goChapter(chapter.next_chapter_unit_id)"
+          >
+            ›
           </div>
 
-          <n-card title="原文" class="section">
-            <div ref="unitWrap" class="unit-wrap">
-              <template v-for="item in segmentBlocks" :key="item.seg.unit.id">
-                <h4
-                  v-if="segmentBlocks.length > 1"
-                  :id="`unit-${item.seg.unit.id}`"
-                  class="seg-title"
-                >
-                  {{ item.seg.unit.title }}
-                </h4>
-                <template v-for="(block, bi) in item.blocks" :key="bi">
-                  <img
-                    v-if="block.img && chapter.images_dir"
-                    :src="imgSrc(block.img)"
-                    :alt="block.img.alt"
-                    class="content-img"
-                    @error="onImgError"
-                  />
-                  <div v-else-if="block.html" class="unit-content md" v-html="block.html"></div>
-                </template>
-              </template>
-            </div>
-          </n-card>
-
-          <div class="footer-bar">
-            <div class="muted small">读完整章后，逐节闯关巩固本章知识</div>
-            <div class="quiz-list">
-              <div v-for="seg in chapter.segments" :key="seg.unit.id" class="quiz-row">
-                <span class="quiz-title">{{ seg.unit.title }}</span>
-                <n-tag size="small" :type="statusType(seg.unit.status)" :bordered="false">
-                  {{ statusLabel(seg.unit.status) }}
-                </n-tag>
-                <n-tag
-                  v-if="seg.unit.mastery !== null"
+          <div class="read-col">
+            <div class="page-header">
+              <div>
+                <h2 class="page-title">{{ chapter.chapter_title }}</h2>
+                <div class="page-subtitle">
+                  来自《{{ chapter.book_title }}》· 第 {{ chapter.chapter_number }}/{{
+                    chapter.chapter_count
+                  }}
+                  章 · AI 领读
+                </div>
+              </div>
+              <div class="chapter-nav">
+                <n-button
                   size="small"
-                  :bordered="false"
-                  :type="masteryType(seg.unit.mastery)"
+                  :disabled="!chapter.prev_chapter_unit_id"
+                  @click="goChapter(chapter.prev_chapter_unit_id)"
                 >
-                  掌握度 {{ Math.round((seg.unit.mastery ?? 0) * 100) }}%
-                </n-tag>
-                <n-button size="small" type="primary" @click="router.push(`/quiz/${seg.unit.id}`)">
-                  去闯关做题
+                  ← 上一章
                 </n-button>
+                <n-button
+                  size="small"
+                  :disabled="!chapter.next_chapter_unit_id"
+                  @click="goChapter(chapter.next_chapter_unit_id)"
+                >
+                  下一章 →
+                </n-button>
+              </div>
+            </div>
+
+            <n-card title="原文" class="section">
+              <div ref="unitWrap" class="unit-wrap">
+                <template v-for="item in segmentBlocks" :key="item.seg.unit.id">
+                  <h4
+                    v-if="segmentBlocks.length > 1"
+                    :id="`unit-${item.seg.unit.id}`"
+                    class="seg-title"
+                  >
+                    {{ item.seg.unit.title }}
+                  </h4>
+                  <template v-for="(block, bi) in item.blocks" :key="bi">
+                    <img
+                      v-if="block.img && chapter.images_dir"
+                      :src="imgSrc(block.img)"
+                      :alt="block.img.alt"
+                      class="content-img"
+                      @error="onImgError"
+                    />
+                    <div v-else-if="block.html" class="unit-content md" v-html="block.html"></div>
+                  </template>
+                </template>
+              </div>
+            </n-card>
+
+            <div class="footer-bar">
+              <div class="muted small">读完整章后，逐节闯关巩固本章知识</div>
+              <div class="quiz-list">
+                <div v-for="seg in chapter.segments" :key="seg.unit.id" class="quiz-row">
+                  <span class="quiz-title">{{ seg.unit.title }}</span>
+                  <n-tag size="small" :type="statusType(seg.unit.status)" :bordered="false">
+                    {{ statusLabel(seg.unit.status) }}
+                  </n-tag>
+                  <n-tag
+                    v-if="seg.unit.mastery !== null"
+                    size="small"
+                    :bordered="false"
+                    :type="masteryType(seg.unit.mastery)"
+                  >
+                    掌握度 {{ Math.round((seg.unit.mastery ?? 0) * 100) }}%
+                  </n-tag>
+                  <n-button size="small" type="primary" @click="router.push(`/quiz/${seg.unit.id}`)">
+                    去闯关做题
+                  </n-button>
+                </div>
               </div>
             </div>
           </div>
@@ -287,6 +313,34 @@ const explanationHtml = computed(() =>
   renderMarkdown(explainText.value || session.value?.explanation || ""),
 );
 
+// 翻章箭头贴正文列左右外缘：量正文列矩形，把到窗口左/右边缘的距离写进内联 left/right。
+// mainColEl 在 v-if 之后才出现，必须在 ref 落地后再挂 ResizeObserver；窗口滚动条出现/消失时也重算
+const mainColEl = ref<HTMLElement | null>(null);
+const colRect = ref({ left: 0, right: 0 });
+let colObserver: ResizeObserver | null = null;
+
+function measureCol(): void {
+  const el = mainColEl.value;
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  colRect.value = { left: r.left, right: window.innerWidth - r.right };
+}
+
+watch(mainColEl, (el) => {
+  colObserver?.disconnect();
+  colObserver = null;
+  if (!el) return;
+  colObserver = new ResizeObserver(measureCol);
+  colObserver.observe(el);
+  colObserver.observe(document.body);
+  measureCol();
+});
+
+onBeforeUnmount(() => {
+  colObserver?.disconnect();
+  colObserver = null;
+});
+
 // 各小节的正文块（文本/图片）：EPUB 导入时插图被抽成 `![alt](文件名)` 标记段，这里原位还原
 const segmentBlocks = computed<SegmentBlocks[]>(
   () =>
@@ -391,6 +445,9 @@ onMounted(() => {
   document.addEventListener("mouseup", onDocMouseup);
   document.addEventListener("mousedown", onDocMousedown);
   document.addEventListener("keydown", onKeydown);
+  pageEl.value?.addEventListener("wheel", onWheel, { passive: true });
+  pageEl.value?.addEventListener("touchstart", onTouchStart, { passive: true });
+  pageEl.value?.addEventListener("touchend", onTouchEnd, { passive: true });
   window.addEventListener("scroll", hideSelButton, true);
 });
 
@@ -398,6 +455,9 @@ onBeforeUnmount(() => {
   document.removeEventListener("mouseup", onDocMouseup);
   document.removeEventListener("mousedown", onDocMousedown);
   document.removeEventListener("keydown", onKeydown);
+  pageEl.value?.removeEventListener("wheel", onWheel);
+  pageEl.value?.removeEventListener("touchstart", onTouchStart);
+  pageEl.value?.removeEventListener("touchend", onTouchEnd);
   window.removeEventListener("scroll", hideSelButton, true);
 });
 
@@ -426,6 +486,55 @@ function onKeydown(e: KeyboardEvent): void {
   if (askShow.value || !chapter.value) return;
   if (e.key === "ArrowLeft") goChapter(chapter.value.prev_chapter_unit_id);
   else if (e.key === "ArrowRight") goChapter(chapter.value.next_chapter_unit_id);
+}
+
+// 触控板/数位板双指横滑翻章：滚轮 deltaX 累计 200px 或触屏横向位移 70px 触发，
+// 只认以横向为主的滑动（纵向滚动照常），1s 冷却防止一次滑动连翻多章
+const SWIPE_WHEEL_THRESHOLD = 200;
+const SWIPE_TOUCH_THRESHOLD = 70;
+const SWIPE_COOLDOWN_MS = 1000;
+let swipeAccX = 0;
+let swipeTouchX: number | null = null;
+let swipeTouchY: number | null = null;
+let swipeLockedUntil = 0;
+
+function onWheel(e: WheelEvent): void {
+  if (askShow.value || !chapter.value) return;
+  if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+  if (e.timeStamp < swipeLockedUntil) return;
+  swipeAccX += e.deltaX;
+  if (Math.abs(swipeAccX) < SWIPE_WHEEL_THRESHOLD) return;
+  const target =
+    swipeAccX > 0 ? chapter.value.next_chapter_unit_id : chapter.value.prev_chapter_unit_id;
+  swipeAccX = 0;
+  if (!target) return;
+  swipeLockedUntil = e.timeStamp + SWIPE_COOLDOWN_MS;
+  goChapter(target);
+}
+
+function onTouchStart(e: TouchEvent): void {
+  if (e.touches.length !== 1) return;
+  swipeTouchX = e.touches[0].clientX;
+  swipeTouchY = e.touches[0].clientY;
+}
+
+function onTouchEnd(e: TouchEvent): void {
+  if (swipeTouchX === null || swipeTouchY === null || !chapter.value || askShow.value) {
+    swipeTouchX = null;
+    swipeTouchY = null;
+    return;
+  }
+  const t = e.changedTouches[0];
+  const dx = t.clientX - swipeTouchX;
+  const dy = t.clientY - swipeTouchY;
+  swipeTouchX = null;
+  swipeTouchY = null;
+  if (Math.abs(dx) < SWIPE_TOUCH_THRESHOLD || Math.abs(dx) <= Math.abs(dy)) return;
+  if (Date.now() < swipeLockedUntil) return;
+  const target = dx < 0 ? chapter.value.next_chapter_unit_id : chapter.value.prev_chapter_unit_id;
+  if (!target) return;
+  swipeLockedUntil = Date.now() + SWIPE_COOLDOWN_MS;
+  goChapter(target);
 }
 
 async function startReading(): Promise<void> {
@@ -735,43 +844,125 @@ function renderMarkdown(src: string): string {
   max-width: none;
 }
 
-.reading-main {
-  display: flex;
-  gap: 20px;
-  align-items: flex-start;
+/* 正文列只负责滚动，不设内边距——滚动条贴在正文栏右缘 */
+.main-col {
+  padding: 0;
+  /* 两列滚动互不牵连：各自是滚动容器，不让滚到尽头时把滚动手势冒泡给外层 */
+  overscroll-behavior: contain;
 }
 
+/* 正文内容居中并给左右各留 48px 空白放箭头；滚动条仍在外层 .main-col 的边缘 */
+.read-col {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0 48px 48px;
+}
+
+/* 翻章箭头：悬浮小圆钮，钉在视口中线（无论正文多长都不随滚动跑），悬停变绿 */
+.side-arrow {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1;
+  /* 悬浮小圆钮：半透明白底 + 淡阴影，悬停变实并变绿；背景透明时 iOS 原生控件会画成方块，必须给底色 */
+  color: #6b7280;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  border: none;
+  outline: none;
+  opacity: 1;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+/* 左右位置由脚本按正文列实际矩形写入内联 left，保证始终贴正文列外缘 */
+
+.side-arrow:hover,
+.side-arrow:focus-visible {
+  color: #18a058;
+  background: #fff;
+}
+
+/* 阅读页自身是定高的网格单行（外层 .main 与其内部 .n-layout-scroll-container 的高度链见 App.vue）；
+   三列容器填满这一行，两列各自内部滚动 */
+.page.reading-page {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.reading-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  gap: 20px;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+/* 两列都被限制在阅读区高度内（height:100% + 父级定高），内容超出才在自己的滚动条里滚 */
 .main-col {
   flex: 1;
   min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  /* 常显滚动条：滚动条出现/消失时正文宽度不跳 */
+  scrollbar-gutter: stable;
 }
 
 .ai-col {
   width: 400px;
   flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  max-height: calc(100vh - 40px);
+  height: 100%;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding-bottom: 4px;
 }
 
-.content-img {
-  display: block;
-  max-width: 100%;
-  margin: 14px auto;
-  border-radius: 6px;
-}
-
+/* 窄屏三列放不下：退回单列整页滚动，箭头改为相对页面定位（随内容滚动） */
 @media (max-width: 900px) {
   .reading-main {
-    flex-direction: column;
+    display: block;
+  }
+
+  .main-col {
+    overflow: visible;
+  }
+
+  .read-col {
+    padding: 0 16px 24px;
   }
 
   .ai-col {
     width: 100%;
-    max-height: none;
-    position: static;
+    overflow: visible;
+  }
+
+  .side-arrow {
+    position: absolute;
+  }
+
+  .side-arrow.left {
+    left: 0;
+  }
+
+  .side-arrow.right {
+    right: 0;
   }
 }
 

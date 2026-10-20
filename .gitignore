@@ -7,3 +7,6 @@ src-tauri/gen/
 # 个人本地资料（不入库）
 大模型推理服务课程.md
 推理框架工程师-学习路线.md
+PD分离实战与原理.md
+PD分离专题/
+fixtures/pd-book/
