@@ -40,7 +40,7 @@ MVP（v0.1）已交付：导入书 → 领读 → 做题 → 间隔复习 的完
 
 - ✅ GitHub Actions 发布流水线：push `v*` tag 触发（`.github/workflows/release.yml`），windows-latest 出 NSIS / macos-latest 出 Apple Silicon DMG，tauri-action 建草稿 Release 挂安装包；tag 版本号需与 `tauri.conf.json` 一致，不等自动更新（接入 updater 见迭代 3）
 - ✅ 重新出题：做题页/结果页一键换一批新题；旧题退役不删除，错题本、复习项、作答记录全部保留
-- ✅ 触控板/数位板双指横滑 + ←→ 键翻章（阅读页 wheel/touch 手势与按键，与两侧悬浮箭头同走 goChapter）
+- ✅ 触控板/数位板双指横滑 + ←→ 键 + 两侧悬浮箭头翻章（阅读页 wheel/touch 手势、按键与首/末章单侧隐藏的两侧悬浮箭头同走 goChapter）
 - ✅ 阅读页原文 Markdown 渲染：标题/加粗/列表/表格/代码块/引用按排版显示，不再露出 `##`、`**`、`|` 源码符号
 - ✅ 设置新增「关闭思考模式」开关（`disable_thinking`）：按接口地址识别厂商方言注入关思考参数（阿里系 `enable_thinking=false`、智谱/火山 `thinking=disabled`，未识别网关两种都带；DeepSeek 官方无参数可关、由模型名 chat/reasoner 决定）
 - ✅ 「无需掌握」标记：书详情页章/小节 ✔ 按钮，跳过序章前言等不必做题的内容，进度照常计入（status=skipped），可撤销；标记时清除该小节待复习项

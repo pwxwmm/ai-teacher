@@ -128,8 +128,64 @@ watch(
   margin-top: 8px;
 }
 
+/* 撑满侧栏右侧剩余宽度由 n-layout-content 提供（换成裸 div 会变成"内容多宽就多宽"，书架被压成单列） */
 .main {
   padding: 20px 24px;
   overflow: auto;
+}
+
+/* 阅读页：外层不再整页滚动，正文列与领读列各在自己内部滚（各一条滚动条）。
+   ⚠ n-layout-content 内部会再套两层 .n-layout-scroll-container，所以 .reading-page 不是 .main 的直接子元素：
+   - 不能用 .main:has(> .reading-page)（一直没命中，两列被内容撑高、滚动全落在整页上，只剩一条滚动条）
+   - 也不能只给 .reading-page 设 display:flex; flex:1：父级是 block，flex 子项不会收缩，照样被内容撑高
+   必须像下面这样把每一层都钉成定高/定网格，最后两列各自 overflow-y:auto 才有各自的滚动条 */
+.main:has(.reading-page) {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* n-layout-content 内部因此多出两层 .n-layout-scroll-container（外层 flex 行、内层滚动容器），
+   逐层把高度钉死为 100% 并禁用它们自身的滚动，滚动交给正文列 / 领读列 */
+.main:has(.reading-page) .n-layout-scroll-container {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.main:has(.reading-page) > .n-layout-scroll-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.main:has(.reading-page) > .n-layout-scroll-container > .n-layout-scroll-container {
+  flex: 1;
+  padding: 20px 24px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.main:has(.reading-page) .reading-page {
+  min-height: 0;
+  height: 100%;
+  padding-bottom: 0;
+}
+
+.main:has(.reading-page) .reading-main {
+  display: flex;
+  min-height: 0;
+  align-items: stretch;
+}
+
+@media (max-width: 900px) {
+  .main:has(.reading-page) {
+    height: auto;
+    overflow: auto;
+  }
+
+  .main:has(.reading-page) .reading-page {
+    display: block;
+    padding-bottom: 48px;
+  }
 }
 </style>
