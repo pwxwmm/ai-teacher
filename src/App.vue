@@ -279,7 +279,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 40px;
+  height: 44px;
   border: none;
   border-radius: 7px;
   background: none;
@@ -360,6 +360,8 @@ watch(
   font-size: 11px;
   cursor: pointer;
   min-width: 0;
+  /* Apple 规范：可点触控区 ≥44pt */
+  min-height: 44px;
   transition: color 0.12s ease;
 }
 
@@ -381,7 +383,8 @@ watch(
 
 .tab-icon {
   display: inline-flex;
-  font-size: 21px;
+  /* SF Symbols Tab 栏图标的常见光学尺寸 */
+  font-size: 24px;
   line-height: 1;
 }
 
