@@ -298,15 +298,18 @@ h6 {
     background: transparent;
   }
 
-  /* 卡片/列表变玻璃：半透明白 + 模糊 + 高光内边 + 半透细线 */
+  /* 卡片/列表变玻璃：半透明白 + 模糊 + 高光内边 + 发丝描边 + 微投影（在淡渐变上要"读得出是卡"） */
   .card,
   .n-card,
   .n-list {
-    background: rgba(255, 255, 255, 0.58) !important;
+    background: rgba(255, 255, 255, 0.72) !important;
     -webkit-backdrop-filter: blur(22px) saturate(170%);
     backdrop-filter: blur(22px) saturate(170%);
-    border: 0.5px solid rgba(255, 255, 255, 0.55) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    border: 0.5px solid rgba(255, 255, 255, 0.6) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.65),
+      0 0 0 0.5px rgba(0, 0, 0, 0.04),
+      0 6px 18px rgba(15, 35, 60, 0.06);
   }
 
   .n-card,
