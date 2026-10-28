@@ -1,5 +1,5 @@
 <template>
-  <div class="page reading-page" ref="pageEl">
+  <div class="page reading-page" ref="pageEl" :style="{ '--reading-bg': currentTheme.bg, '--reading-text': currentTheme.text, '--reading-heading': currentTheme.heading, '--reading-body-size': `${fontSize}px`, '--reading-line-height': lineHeight }">
     <div v-if="loading" class="center-box">
       <n-spin size="large" />
     </div>
@@ -68,13 +68,34 @@
               </div>
             </div>
 
-            <n-card title="原文" class="section">
-              <div ref="unitWrap" class="unit-wrap">
+            <!-- 阅读设置：Apple 图书风（主题 + 字号） -->
+            <div class="reading-settings">
+              <div class="theme-group" role="group" aria-label="主题切换">
+                <button
+                  v-for="t in themes"
+                  :key="t.key"
+                  class="theme-btn"
+                  :class="{ active: theme === t.key }"
+                  :style="{ background: t.bg, borderColor: t.bg }"
+                  :title="t.label"
+                  @click="setTheme(t.key)"
+                />
+              </div>
+              <div class="font-controls">
+                <n-button size="small" quaternary @click="adjustFontSize(-1)">A−</n-button>
+                <span class="font-size-label muted small">{{ fontSize }}px</span>
+                <n-button size="small" quaternary @click="adjustFontSize(1)">A＋</n-button>
+              </div>
+            </div>
+
+            <n-card title="原文" class="section reading-card" :style="{ background: currentTheme.cardBg }">
+              <div ref="unitWrap" class="unit-wrap" :style="{ color: currentTheme.text, backgroundColor: currentTheme.cardBg }">
                 <template v-for="item in segmentBlocks" :key="item.seg.unit.id">
                   <h4
                     v-if="segmentBlocks.length > 1"
                     :id="`unit-${item.seg.unit.id}`"
                     class="seg-title"
+                    :style="{ color: currentTheme.heading }"
                   >
                     {{ item.seg.unit.title }}
                   </h4>
@@ -86,7 +107,12 @@
                       class="content-img"
                       @error="onImgError"
                     />
-                    <div v-else-if="block.html" class="unit-content md" v-html="block.html"></div>
+                    <div
+                      v-else-if="block.html"
+                      class="unit-content md"
+                      :style="{ fontSize: `${fontSize}px`, lineHeight }"
+                      v-html="block.html"
+                    ></div>
                   </template>
                 </template>
               </div>
@@ -309,6 +335,65 @@ const focusUnitId = computed(() => Number(route.query.focus));
 const chapter = ref<ChapterContent | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
+
+// —— 阅读偏好（Apple 图书风主题 + 字号）————
+const READING_PREFS_KEY = "ai-teacher:reading-prefs";
+
+interface ThemeDef {
+  key: string;
+  label: string;
+  bg: string;
+  cardBg: string;
+  text: string;
+  heading: string;
+}
+
+const themes: ThemeDef[] = [
+  { key: "paper", label: "纸白", bg: "#FFFFFF", cardBg: "#FFFFFF", text: "rgba(0,0,0,0.85)", heading: "rgba(0,0,0,0.87)" },
+  { key: "sepia", label: "暖纸", bg: "#F5EFDC", cardBg: "#F8F3E4", text: "rgba(87,60,38,0.85)", heading: "rgba(70,48,24,0.87)" },
+  { key: "slate", label: "深灰", bg: "#4A4A4C", cardBg: "#3A3A3B", text: "rgba(255,255,255,0.85)", heading: "rgba(255,255,255,0.9)" },
+  { key: "night", label: "夜黑", bg: "#1C1C1E", cardBg: "#2C2C2E", text: "rgba(255,255,255,0.80)", heading: "rgba(255,255,255,0.9)" },
+];
+
+const theme = ref<string>("paper");
+const fontSize = ref<number>(16);
+const lineHeight = 1.75;
+
+function loadPrefs(): { theme?: string; fontSize?: number } {
+  try {
+    return JSON.parse(localStorage.getItem(READING_PREFS_KEY) || "{}") ?? {};
+  } catch {
+    return {};
+  }
+}
+applyPrefs(loadPrefs());
+
+function applyPrefs(p: { theme?: string; fontSize?: number }): void {
+  if (p.theme && themes.some((t) => t.key === p.theme)) theme.value = p.theme!;
+  if (p.fontSize != null) fontSize.value = clampFont(p.fontSize);
+}
+
+function clampFont(n: number): number {
+  return Math.min(24, Math.max(13, Math.round(n)));
+}
+
+function setTheme(key: string): void {
+  theme.value = key;
+}
+
+function adjustFontSize(delta: number): void {
+  fontSize.value = clampFont(fontSize.value + delta);
+}
+
+const currentTheme = computed(() => themes.find((t) => t.key === theme.value) ?? themes[0]);
+
+watch([theme, fontSize], ([t, s]) => {
+  try {
+    localStorage.setItem(READING_PREFS_KEY, JSON.stringify({ theme: t, fontSize: s }));
+  } catch {
+    /* 本地存储不可用时仅本次运行内记忆 */
+  }
+});
 
 const session = ref<ReadingSession | null>(null);
 const reading = ref(false);
@@ -967,6 +1052,57 @@ function renderMarkdown(src: string): string {
 }
 
 /* 两列都被限制在阅读区高度内（height:100% + 父级定高），内容超出才在自己的滚动条里滚 */
+
+.reading-settings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+
+.theme-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.theme-btn:hover {
+  transform: scale(1.12);
+}
+
+.theme-btn.active {
+  box-shadow: 0 0 0 2px var(--text-secondary), 0 0 0 3.5px var(--text-tertiary);
+}
+
+.font-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.font-size-label {
+  min-width: 40px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
 .main-col {
   flex: 1;
   min-width: 0;
@@ -987,6 +1123,36 @@ function renderMarkdown(src: string): string {
 }
 
 /* 窄屏三列放不下：退回单列整页滚动，箭头改为相对页面定位（随内容滚动） */
+
+.reading-card {
+  transition: background-color 0.2s ease;
+}
+
+.reading-card :deep(.n-card__content) {
+  background-color: inherit;
+}
+
+.unit-wrap * {
+  color: inherit;
+}
+
+/* 让正文受主题色支配（不再固定死 map 默认） */
+.unit-content,
+.unit-content.md,
+.unit-wrap,
+.unit-wrap p,
+.unit-wrap li,
+.unit-wrap h1,
+.unit-wrap h2,
+.unit-wrap h3 {
+  color: var(--reading-text) !important;
+  background: transparent;
+}
+
+.seg-title {
+  color: var(--reading-heading) !important;
+}
+
 .content-img {
   display: block;
   max-width: 100%;
@@ -1335,8 +1501,8 @@ function renderMarkdown(src: string): string {
 }
 
 .md.unit-content {
-  font-size: 18px;
-  line-height: 1.9;
+  font-size: var(--reading-body-size, 18px);
+  line-height: var(--reading-line-height, 1.9);
 }
 
 .md.unit-content :deep(p) {
