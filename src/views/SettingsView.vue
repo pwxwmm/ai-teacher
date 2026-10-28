@@ -79,10 +79,26 @@
     </n-card>
 
     <n-card title="关于" class="about-card">
-      <div class="muted small">AI 伴读 v{{ BUILD_VERSION }}</div>
-      <div class="muted small">构建 {{ BUILD_HASH }} · {{ BUILD_TIME }}</div>
-      <div class="muted small">
-        用构建信息对照最新代码是否已生效；学习数据保存在本机应用数据目录，覆盖安装或升级不会丢失进度。
+      <div class="app-identity">
+        <div class="app-name">AI 伴读</div>
+        <div class="muted small">版本 {{ BUILD_VERSION }}</div>
+        <div class="muted small">构建 {{ BUILD_HASH }} · {{ BUILD_TIME }}</div>
+      </div>
+      <div class="about-section">
+        <div class="about-label">开发者</div>
+        <div class="muted small">你的名字或团队 · 联系邮箱：team@example.com</div>
+      </div>
+      <div class="about-section">
+        <div class="about-label">隐私说明</div>
+        <div class="muted small">
+          学习数据与配置保存在本机应用数据目录，不上传服务器；LLM 请求直连你配置的接口地址，不经过第三方中转。
+        </div>
+      </div>
+      <div class="about-section">
+        <div class="about-label">帮助与反馈</div>
+        <div class="muted small">
+          用构建信息对照最新代码是否已生效；覆盖安装或升级不会丢失学习进度与隐私配置。
+        </div>
       </div>
     </n-card>
   </div>
@@ -186,7 +202,7 @@ async function onTest(): Promise<void> {
 }
 
 .about-card .small {
-  line-height: 1.9;
+  line-height: 1.75;
 }
 
 .switch-row {
@@ -201,5 +217,30 @@ async function onTest(): Promise<void> {
 
 .save-behavior {
   margin-top: 12px;
+}
+
+.app-identity {
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.09);
+}
+
+.app-name {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: rgba(0, 0, 0, 0.87);
+  margin-bottom: 4px;
+}
+
+.about-section + .about-section {
+  margin-top: 14px;
+}
+
+.about-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.87);
+  margin-bottom: 4px;
 }
 </style>
