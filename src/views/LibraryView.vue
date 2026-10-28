@@ -23,7 +23,7 @@
     </n-empty>
 
     <n-empty v-else-if="store.books.length === 0" description="还没有导入图书，点击右上角「导入图书」">
-      <div class="muted small empty-extra">支持 Markdown / TXT / EPUB / PDF（PDF 解析为实验性）</div>
+      <div class="muted small empty-extra">支持 Markdown / TXT / EPUB / PDF（PDF 需为可选中文字的版本，扫描件请先 OCR）</div>
       <n-button type="primary" @click="onImport">导入图书</n-button>
     </n-empty>
 

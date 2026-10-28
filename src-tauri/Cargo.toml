@@ -25,3 +25,4 @@ thiserror = "2"
 zip = "2"
 quick-xml = "0.36"
 pdf-extract = "0.7"
+lopdf = { version = "0.34", default-features = false, features = ["nom_parser"] }
