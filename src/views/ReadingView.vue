@@ -218,6 +218,9 @@
       :close-on-esc="!askStreaming"
       @after-leave="resetAskModal"
     >
+      <n-alert v-if="quoteWarn" type="warning" :bordered="false" class="quote-warn">
+        已选中 {{ askQuote.length }} 字的大段正文。提问时会把这整段原文一起发给 AI，可能产生更多费用。
+      </n-alert>
       <div class="quote-block">{{ askQuote }}</div>
       <div v-if="askRounds.length > 0" class="rounds">
         <div v-for="(r, i) in askRounds" :key="i" class="round">
@@ -399,6 +402,9 @@ const askQuote = ref("");
 const askQuestion = ref("");
 const askRounds = ref<QA[]>([]);
 const askStreaming = ref(false);
+// 选中原文会整段随提问发给 LLM；超过这个字数只在弹窗里提示，不阻止提问
+const QUOTE_WARN_CHARS = 500;
+const quoteWarn = computed(() => askQuote.value.length > QUOTE_WARN_CHARS);
 
 async function load(): Promise<void> {
   if (invalidId.value) {
@@ -609,12 +615,12 @@ function onDocMouseup(e: MouseEvent): void {
     return;
   }
   const text = sel.toString().trim();
-  if (text.length < 1 || text.length > 500) return;
+  if (!text) return;
   pendingQuote.value = text;
   const rect = sel.getRangeAt(0).getBoundingClientRect();
   selPos.value = {
     x: Math.max(8, Math.min(rect.left, window.innerWidth - 104)),
-    y: Math.min(rect.bottom + 8, window.innerHeight - 44),
+    y: Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 44)),
   };
   selShow.value = true;
 }
@@ -1126,6 +1132,10 @@ function renderMarkdown(src: string): string {
 .sel-btn {
   position: fixed;
   z-index: 1000;
+}
+
+.quote-warn {
+  margin-bottom: 12px;
 }
 
 .quote-block {
