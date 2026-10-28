@@ -2,37 +2,50 @@
   <n-message-provider>
     <n-layout has-sider style="height: 100vh">
       <n-layout-sider
-        v-if="!isMobile"
-        bordered
+        v-if="!isMobile && !isTablet"
         :width="180"
-        :collapsed-width="64"
-        :collapsed="isTablet"
-        class="app-sider"
+        class="app-sider glass"
       >
-        <div class="logo">{{ isTablet ? "伴" : "AI 伴读" }}</div>
+        <div class="logo" data-tauri-drag-region>AI 伴读</div>
         <n-menu
           :options="menuOptions"
           :value="activeKey"
-          :collapsed="isTablet"
-          :collapsed-width="64"
-          :collapsed-icon-size="24"
           @update:value="onSelect"
         />
-        <div v-if="showContinue && !isTablet" class="continue-wrap">
+        <div v-if="showContinue" class="continue-wrap">
           <n-button block secondary type="primary" @click="goContinueReading">
             继续阅读
           </n-button>
         </div>
-        <div v-else-if="showContinue" class="continue-wrap tablet">
-          <n-button text @click="goContinueReading">
-            <n-icon :size="24"><ArrowRedoCircleOutline /></n-icon>
-          </n-button>
-        </div>
       </n-layout-sider>
+      <!-- 平板区间：自绘 64px 图标栏（naive collapsed 菜单在 Overlay 窗口下渲染异常） -->
+      <aside v-else-if="isTablet" class="tablet-rail glass">
+        <div class="rail-logo" data-tauri-drag-region>伴</div>
+        <button
+          v-for="item in menuOptions"
+          :key="item.key"
+          class="rail-item"
+          :class="{ active: activeKey === item.key }"
+          @click="onSelect(item.key as string)"
+        >
+          <span class="rail-icon">
+            <component :is="item.icon" />
+          </span>
+        </button>
+        <button
+          v-if="showContinue"
+          class="rail-item continue"
+          @click="goContinueReading"
+        >
+          <span class="rail-icon">
+            <n-icon :size="22"><ArrowRedoCircleOutline /></n-icon>
+          </span>
+        </button>
+      </aside>
       <n-layout-content ref="mainRef" class="main" :class="{ mobile: isMobile }">
         <router-view />
       </n-layout-content>
-      <nav v-if="isMobile" class="tab-bar">
+      <nav v-if="isMobile" class="tab-bar glass">
         <button
           v-for="item in menuOptions"
           :key="item.key"
@@ -178,16 +191,89 @@ watch(
 </script>
 
 <style scoped>
+/* 侧栏在玻璃基底上：Naive UI 默认底色/描边全去掉，交给 .glass 容器 */
+.app-sider {
+  border-right: none;
+}
+
+.app-sider :deep(.n-layout-sider__content) {
+  background: transparent;
+}
+
+.app-sider :deep(.n-menu) {
+  background: transparent;
+}
+
+/* 左上角 logo 区充当窗口拖动区；Overlay 标题栏下红绿灯叠在这层上方，padding 左让位 */
 .logo {
-  padding: 18px 16px 10px;
+  padding: 24px 16px 12px 78px;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: left;
+}
+
+/* 平板区间 64px 图标栏（自绘，避开 naive collapsed 菜单在 Overlay 窗口下的渲染问题） */
+.tablet-rail {
+  width: 64px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 0 10px 12px;
+}
+
+.rail-logo {
+  padding: 26px 0 10px;
   font-size: 18px;
   font-weight: 700;
   text-align: center;
 }
 
+.rail-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.rail-item:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.rail-item.active {
+  background: rgba(255, 255, 255, 0.5);
+  color: #18a058;
+}
+
+.rail-item.continue {
+  color: #2080f0;
+  margin-top: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.rail-icon {
+  display: inline-flex;
+  font-size: 22px;
+  line-height: 1;
+}
+
+
+.app-sider :deep(.n-menu) :deep(.n-menu-item) {
+  --n-item-color-hover: rgba(255, 255, 255, 0.35);
+  --n-item-color-active: rgba(255, 255, 255, 0.45);
+  --n-item-color-active-hover: rgba(255, 255, 255, 0.5);
+}
+
 .continue-wrap {
   padding: 12px 12px 0;
-  border-top: 1px solid #efeff5;
+  border-top: 1px solid rgba(255, 255, 255, 0.5);
   margin-top: 8px;
 }
 
@@ -260,20 +346,36 @@ watch(
 
 .main.mobile {
   padding: 12px;
-  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
 }
 
+/* 浮动 pill 形 Tab 栏（iPadOS 26 / iOS 26 同款氛围） */
 .tab-bar {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 12px;
+  right: 12px;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   z-index: 100;
   display: flex;
   align-items: stretch;
-  background: #fff;
-  border-top: 1px solid #efeff5;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: none;
+  background: none;
+  color: rgba(0, 0, 0, 0.5);
+  font-size: 11px;
+  cursor: pointer;
+  min-width: 0;
 }
 
 .tab-item {
