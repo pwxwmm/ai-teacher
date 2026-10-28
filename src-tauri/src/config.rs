@@ -93,7 +93,7 @@ mod tests {
         assert_eq!(s.base_url, "https://api.deepseek.com");
         assert_eq!(s.api_key, "");
         assert!(!s.auto_start_reading);
-        assert!(!s.disable_thinking);
+        assert!(s.disable_thinking, "默认应关闭思考");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

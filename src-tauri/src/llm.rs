@@ -1,5 +1,7 @@
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use crate::models::{LlmSettings, QType};
@@ -38,28 +40,165 @@ pub fn is_mock_enabled() -> bool {
         .unwrap_or(false)
 }
 
-/// 关思考参数（disable_thinking 开启时注入请求体）：按 base_url 识别厂商方言——
-/// 阿里系（dashscope/aliyuncs）`enable_thinking=false`；智谱（bigmodel）/火山（volces）
-/// `thinking="disabled"`；未识别网关两种都带上；DeepSeek 官方无参数可关（由模型名
-/// chat/reasoner 决定），返回空。
-pub fn thinking_off_params(base_url: &str) -> serde_json::Map<String, serde_json::Value> {
+/// OpenAI 兼容协议的思考参数：关闭 = `reasoning_effort: none`，开启 = `medium`。
+/// 厂商方言（enable_thinking / thinking 对象等）留待以后按需做独立协议适配，这里不掺。
+pub fn thinking_params(disable_thinking: bool) -> serde_json::Map<String, serde_json::Value> {
     let mut map = serde_json::Map::new();
-    let url = base_url.to_lowercase();
-    if url.contains("deepseek") {
-        return map;
-    }
-    let ali = url.contains("dashscope") || url.contains("aliyuncs");
-    let zhipu_or_volcano = url.contains("bigmodel") || url.contains("volces");
-    if ali || (!ali && !zhipu_or_volcano) {
-        map.insert("enable_thinking".to_string(), serde_json::Value::Bool(false));
-    }
-    if zhipu_or_volcano || (!ali && !zhipu_or_volcano) {
-        map.insert(
-            "thinking".to_string(),
-            serde_json::Value::String("disabled".to_string()),
-        );
-    }
+    map.insert(
+        "reasoning_effort".to_string(),
+        serde_json::Value::String(if disable_thinking { "none" } else { "medium" }.to_string()),
+    );
     map
+}
+
+/// 部分网关把模型的思考过程直接拼进 `content`（标准 `reasoning_content`/`reasoning`
+/// 字段我们根本不读），思考段以这些标记结尾；出现标记即说明之前全是思考。
+const THINK_END_TAGS: [&str; 3] = ["</think>", "</thinking>", "</reasoning>"];
+
+/// 文本中最早出现的思考结束标记的末尾字节位置。
+fn thinking_end(text: &str) -> Option<usize> {
+    THINK_END_TAGS
+        .iter()
+        .filter_map(|tag| text.find(tag).map(|start| (start, start + tag.len())))
+        .min_by_key(|(start, _)| *start)
+        .map(|(_, end)| end)
+}
+
+/// 去掉思考前缀：`We need answer...</think>2` → `2`；没有结束标记时原样返回。
+pub(crate) fn strip_thinking(text: &str) -> String {
+    match thinking_end(text) {
+        Some(end) => text[end..].trim_start().to_string(),
+        None => text.to_string(),
+    }
+}
+
+/// 是否内联思考按 (base_url, model, 关思考开关) 记住结论：首次未知时先压住前导内容，
+/// 等结束标记或流结束再决定，避免把思考当答案送出去；之后按结论直接流式放行。
+fn inline_thinking_cache() -> &'static Mutex<HashMap<String, bool>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn inline_cache_key(base_url: &str, model: &str, disable_thinking: bool) -> String {
+    format!("{base_url}|{model}|{disable_thinking}")
+}
+
+fn known_inline_thinking(key: &str) -> Option<bool> {
+    inline_thinking_cache().lock().ok()?.get(key).copied()
+}
+
+fn remember_inline_thinking(key: &str, inline: bool) {
+    if let Ok(mut cache) = inline_thinking_cache().lock() {
+        cache.insert(key.to_string(), inline);
+    }
+}
+
+/// 模型不接受思考参数时的一次性提示（内存去重，重启后可再提示）。
+#[derive(Default)]
+struct ThinkingNoticeState {
+    seen: HashSet<String>,
+    pending: Vec<String>,
+}
+
+impl ThinkingNoticeState {
+    /// 同一个 (base_url, model, 开/关) 只记一次；返回是否新记录。
+    fn record(&mut self, key: &str, message: String) -> bool {
+        if !self.seen.insert(key.to_string()) {
+            return false;
+        }
+        self.pending.push(message);
+        true
+    }
+
+    fn take(&mut self) -> Option<String> {
+        self.pending.pop()
+    }
+}
+
+fn thinking_notice_state() -> &'static Mutex<ThinkingNoticeState> {
+    static STATE: OnceLock<Mutex<ThinkingNoticeState>> = OnceLock::new();
+    STATE.get_or_init(|| Mutex::new(ThinkingNoticeState::default()))
+}
+
+/// 取走一条待展示的提示（供前端在 AI 动作结束后询问）。
+pub fn take_thinking_notice() -> Option<String> {
+    thinking_notice_state().lock().ok().and_then(|mut s| s.take())
+}
+
+fn remember_thinking_rejected(base_url: &str, model: &str, disable_thinking: bool) {
+    let key = format!("{base_url}|{model}|{disable_thinking}");
+    let message = format!(
+        "当前模型不支持{}思考，已按模型默认继续",
+        if disable_thinking { "关闭" } else { "开启" }
+    );
+    if let Ok(mut state) = thinking_notice_state().lock() {
+        state.record(&key, message);
+    }
+}
+
+/// 流式输出的思考剥离器。已知不内联思考时原样放行；否则先压住内容，
+/// 见到结束标记就把标记之前的部分丢掉、之后的内容照常流式发出。
+struct AnswerFilter {
+    hold: String,
+    answer_started: bool,
+    trim_pending: bool,
+    inline_thinking: Option<bool>,
+}
+
+impl AnswerFilter {
+    fn new(known_inline: Option<bool>) -> Self {
+        Self {
+            hold: String::new(),
+            answer_started: known_inline == Some(false),
+            trim_pending: false,
+            inline_thinking: known_inline,
+        }
+    }
+
+    fn push(&mut self, piece: &str) -> Vec<String> {
+        if self.answer_started {
+            return self.emit(piece);
+        }
+        self.hold.push_str(piece);
+        let Some(end) = thinking_end(&self.hold) else {
+            return Vec::new();
+        };
+        self.answer_started = true;
+        self.inline_thinking = Some(true);
+        self.trim_pending = true;
+        let tail = self.hold[end..].to_string();
+        self.hold.clear();
+        self.emit(&tail)
+    }
+
+    /// 流结束时调用：没见到结束标记说明这段内容就是答案，整段放行。
+    fn finish(&mut self) -> Vec<String> {
+        if self.answer_started {
+            return Vec::new();
+        }
+        self.inline_thinking = Some(false);
+        let held = std::mem::take(&mut self.hold);
+        if held.trim().is_empty() {
+            Vec::new()
+        } else {
+            vec![held]
+        }
+    }
+
+    fn emit(&mut self, piece: &str) -> Vec<String> {
+        if piece.is_empty() {
+            return Vec::new();
+        }
+        if self.trim_pending {
+            let trimmed = piece.trim_start();
+            if trimmed.is_empty() {
+                return Vec::new();
+            }
+            self.trim_pending = false;
+            return vec![trimmed.to_string()];
+        }
+        vec![piece.to_string()]
+    }
 }
 
 /// OpenAI 兼容的 chat/completions 调用。base_url 是否以 /v1 结尾均可。
@@ -78,23 +217,25 @@ pub async fn chat(
         .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败：{e}"))?;
-    let mut body = serde_json::json!({
+    let base_body = serde_json::json!({
         "model": model,
         "messages": messages,
         "stream": false,
     });
-    if disable_thinking {
-        if let Some(obj) = body.as_object_mut() {
-            obj.extend(thinking_off_params(base_url));
-        }
+    let mut with_params = base_body.clone();
+    if let Some(obj) = with_params.as_object_mut() {
+        obj.extend(thinking_params(disable_thinking));
     }
+    let mut use_params = true;
+    let mut dropped_params = false;
 
     let mut retries = 0u32;
     loop {
+        let body = if use_params { &with_params } else { &base_body };
         let response = client
             .post(&url)
             .bearer_auth(api_key)
-            .json(&body)
+            .json(body)
             .send()
             .await;
         let resp = match response {
@@ -103,6 +244,12 @@ pub async fn chat(
         };
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
+        if matches!(status.as_u16(), 400 | 422) && use_params {
+            // 模型不认 reasoning_effort：去掉参数重试一次，思考开关降级为模型默认
+            use_params = false;
+            dropped_params = true;
+            continue;
+        }
         let retriable = status.as_u16() == 429 || status.is_server_error();
         if retriable && retries < MAX_RETRIES {
             retries += 1;
@@ -116,15 +263,25 @@ pub async fn chat(
                 truncate(&text, 300)
             ));
         }
+        if dropped_params {
+            remember_thinking_rejected(base_url, model, disable_thinking);
+        }
         let parsed: ChatResponse =
             serde_json::from_str(&text).map_err(|e| format!("解析 AI 响应失败：{e}"))?;
-        let content = parsed
+        let raw = parsed
             .choices
             .into_iter()
             .next()
             .and_then(|c| c.message.content)
             .filter(|s| !s.trim().is_empty());
-        return content.ok_or_else(|| "AI 返回内容为空".to_string());
+        let Some(raw) = raw else {
+            return Err("AI 返回内容为空".to_string());
+        };
+        let content = strip_thinking(&raw);
+        if content.trim().is_empty() {
+            return Err("AI 返回内容为空".to_string());
+        }
+        return Ok(content);
     }
 }
 
@@ -152,23 +309,25 @@ pub async fn chat_stream(
         .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败：{e}"))?;
-    let mut body = serde_json::json!({
+    let base_body = serde_json::json!({
         "model": settings.model,
         "messages": messages,
         "stream": true,
     });
-    if settings.disable_thinking {
-        if let Some(obj) = body.as_object_mut() {
-            obj.extend(thinking_off_params(&settings.base_url));
-        }
+    let mut with_params = base_body.clone();
+    if let Some(obj) = with_params.as_object_mut() {
+        obj.extend(thinking_params(settings.disable_thinking));
     }
+    let mut use_params = true;
+    let mut dropped_params = false;
 
     let mut retries = 0u32;
     let resp = loop {
+        let body = if use_params { &with_params } else { &base_body };
         let response = client
             .post(&url)
             .bearer_auth(&settings.api_key)
-            .json(&body)
+            .json(body)
             .send()
             .await;
         let resp = match response {
@@ -176,6 +335,13 @@ pub async fn chat_stream(
             Err(e) => return Err(format!("网络错误：{e}")),
         };
         let status = resp.status();
+        if matches!(status.as_u16(), 400 | 422) && use_params {
+            // 模型不认 reasoning_effort：去掉参数重试一次，思考开关降级为模型默认
+            use_params = false;
+            dropped_params = true;
+            let _ = resp.text().await;
+            continue;
+        }
         let retriable = status.as_u16() == 429 || status.is_server_error();
         if retriable && retries < MAX_RETRIES {
             retries += 1;
@@ -192,7 +358,20 @@ pub async fn chat_stream(
         }
         break resp;
     };
+    if dropped_params {
+        remember_thinking_rejected(
+            &settings.base_url,
+            &settings.model,
+            settings.disable_thinking,
+        );
+    }
 
+    let cache_key = inline_cache_key(
+        &settings.base_url,
+        &settings.model,
+        settings.disable_thinking,
+    );
+    let mut filter = AnswerFilter::new(known_inline_thinking(&cache_key));
     let mut stream = resp.bytes_stream();
     // 只按完整行解码，原始字节先入缓冲，避免切在多字节字符中间
     let mut pending: Vec<u8> = Vec::new();
@@ -215,9 +394,9 @@ pub async fn chat_stream(
                         match parse_sse_data(data) {
                             Some(SseEvent::Done) => done = true,
                             Some(SseEvent::Delta(piece)) => {
-                                if !piece.is_empty() {
-                                    on_delta(&piece);
-                                    full.push_str(&piece);
+                                for out in filter.push(&piece) {
+                                    on_delta(&out);
+                                    full.push_str(&out);
                                 }
                             }
                             None => {}
@@ -228,6 +407,13 @@ pub async fn chat_stream(
             Some(Err(e)) => return Err(format!("流式读取中断：{e}")),
             None => break,
         }
+    }
+    for out in filter.finish() {
+        on_delta(&out);
+        full.push_str(&out);
+    }
+    if let Some(inline) = filter.inline_thinking {
+        remember_inline_thinking(&cache_key, inline);
     }
     if full.trim().is_empty() {
         return Err("AI 返回内容为空".to_string());
@@ -993,32 +1179,218 @@ mod tests {
         ping(&mock_settings()).await.unwrap();
     }
 
+    /// 读一次完整的 HTTP 请求，返回请求体（JSON）。
+    fn read_http_request(socket: &mut std::net::TcpStream) -> String {
+        use std::io::Read;
+        let mut req: Vec<u8> = Vec::new();
+        let mut buf = [0u8; 4096];
+        let header_end = loop {
+            let n = socket.read(&mut buf).unwrap();
+            assert!(n > 0, "客户端连接被提前关闭");
+            req.extend_from_slice(&buf[..n]);
+            if let Some(pos) = req.windows(4).position(|w| w == b"\r\n\r\n") {
+                break pos + 4;
+            }
+        };
+        let headers = String::from_utf8_lossy(&req[..header_end]).to_string();
+        let content_length: usize = headers
+            .lines()
+            .find_map(|l| {
+                l.to_ascii_lowercase()
+                    .strip_prefix("content-length:")
+                    .and_then(|v| v.trim().parse::<usize>().ok())
+            })
+            .unwrap_or(0);
+        while req.len() < header_end + content_length {
+            let n = socket.read(&mut buf).unwrap();
+            assert!(n > 0);
+            req.extend_from_slice(&buf[..n]);
+        }
+        String::from_utf8_lossy(&req[header_end..]).to_string()
+    }
+
+    fn write_http(socket: &mut std::net::TcpStream, status: &str, content_type: &str, body: &str) {
+        use std::io::Write;
+        let resp = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        socket.write_all(resp.as_bytes()).unwrap();
+        socket.flush().unwrap();
+    }
+
     #[test]
-    fn thinking_off_params_match_vendor_dialects() {
-        // DeepSeek 官方无参数可关（由模型名决定）
-        assert!(thinking_off_params("https://api.deepseek.com").is_empty());
-        // 阿里系：只带 enable_thinking=false
-        let ali = thinking_off_params("https://dashscope.aliyuncs.com/compatible-mode/v1");
+    fn thinking_params_follow_openai_protocol() {
+        // 只按 OpenAI 兼容协议发 reasoning_effort：关闭 = none，开启 = medium
+        let off = thinking_params(true);
         assert_eq!(
-            ali.get("enable_thinking"),
-            Some(&serde_json::Value::Bool(false))
+            off.get("reasoning_effort"),
+            Some(&serde_json::Value::String("none".to_string()))
         );
-        assert!(!ali.contains_key("thinking"));
-        // 智谱：只带 thinking=disabled
-        let zhipu = thinking_off_params("https://open.bigmodel.cn/api/paas/v4");
+        assert_eq!(off.len(), 1, "不应掺厂商方言参数：{off:?}");
+
+        let on = thinking_params(false);
         assert_eq!(
-            zhipu.get("thinking"),
-            Some(&serde_json::Value::String("disabled".to_string()))
+            on.get("reasoning_effort"),
+            Some(&serde_json::Value::String("medium".to_string()))
         );
-        assert!(!zhipu.contains_key("enable_thinking"));
-        // 火山引擎：只有 thinking=disabled
-        let volcano = thinking_off_params("https://ark.cn-beijing.volces.com/api/v3");
-        assert!(volcano.contains_key("thinking"));
-        assert!(!volcano.contains_key("enable_thinking"));
-        // 未识别网关：两种都带
-        let unknown = thinking_off_params("https://gateway.example.com");
-        assert!(unknown.contains_key("thinking"));
-        assert!(unknown.contains_key("enable_thinking"));
+        assert_eq!(on.len(), 1, "不应掺厂商方言参数：{on:?}");
+    }
+
+    #[test]
+    fn thinking_notice_records_once_per_key() {
+        let mut state = ThinkingNoticeState::default();
+        assert!(state.record("api.example.com|m|off", "不支持关闭思考".to_string()));
+        assert!(!state.record("api.example.com|m|off", "再次失败".to_string()));
+        assert_eq!(state.take(), Some("不支持关闭思考".to_string()));
+        assert_eq!(state.take(), None);
+    }
+
+    #[tokio::test]
+    async fn chat_retries_without_thinking_params_on_400() {
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let (mut first, _) = listener.accept().unwrap();
+            let body = read_http_request(&mut first);
+            assert!(
+                body.contains("\"reasoning_effort\":\"none\""),
+                "首次请求应带关思考参数：{body}"
+            );
+            write_http(
+                &mut first,
+                "400 Bad Request",
+                "application/json",
+                r#"{"error":{"message":"Unsupported parameter: reasoning_effort"}}"#,
+            );
+
+            let (mut second, _) = listener.accept().unwrap();
+            let body = read_http_request(&mut second);
+            assert!(!body.contains("reasoning_effort"), "重试应去掉思考参数：{body}");
+            write_http(
+                &mut second,
+                "200 OK",
+                "application/json",
+                r#"{"choices":[{"message":{"content":"你好"}}]}"#,
+            );
+        });
+
+        let text = chat(
+            &format!("http://{addr}"),
+            "sk-test",
+            "retry-model",
+            vec![ChatMessage::user("hi")],
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(text, "你好");
+        handle.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn chat_stream_retries_without_thinking_params_on_400() {
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let (mut first, _) = listener.accept().unwrap();
+            let body = read_http_request(&mut first);
+            assert!(
+                body.contains("\"reasoning_effort\":\"none\""),
+                "首次请求应带关思考参数：{body}"
+            );
+            write_http(
+                &mut first,
+                "400 Bad Request",
+                "application/json",
+                r#"{"error":{"message":"Unsupported parameter: reasoning_effort"}}"#,
+            );
+
+            let (mut second, _) = listener.accept().unwrap();
+            let body = read_http_request(&mut second);
+            assert!(!body.contains("reasoning_effort"), "重试应去掉思考参数：{body}");
+            let events = "data: {\"choices\":[{\"delta\":{\"content\":\"答\"}}]}\n\n\
+                          data: {\"choices\":[{\"delta\":{\"content\":\"案\"}}]}\n\n\
+                          data: [DONE]\n\n";
+            write_http(&mut second, "200 OK", "text/event-stream", events);
+        });
+
+        let settings = LlmSettings {
+            base_url: format!("http://{addr}"),
+            api_key: "sk-test".to_string(),
+            model: "stream-retry-model".to_string(),
+            auto_start_reading: false,
+            disable_thinking: true,
+        };
+        let full = chat_stream(&settings, vec![ChatMessage::user("hi")], &mut |_d| {})
+            .await
+            .unwrap();
+        assert_eq!(full, "答案");
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn strip_thinking_drops_inline_reasoning_prefix() {
+        // 部分网关把思考拼进 content，只给结束标记、不给开标签
+        assert_eq!(strip_thinking("We need answer. 1+1=2.</think>2"), "2");
+        assert_eq!(
+            strip_thinking("思考…\n</think>\n\n## 重点梳理\n- 一"),
+            "## 重点梳理\n- 一"
+        );
+        assert_eq!(strip_thinking("<thinking>想一想</thinking>答案"), "答案");
+        assert_eq!(strip_thinking("<reasoning>想一想</reasoning>答案"), "答案");
+        // 正常回答不含标记：原样保留，不能误删正文（含英文 response 一词也不能误伤）
+        assert_eq!(strip_thinking("## 背景引入\n正文"), "## 背景引入\n正文");
+        assert_eq!(
+            strip_thinking("HTTP response 是服务端的应答"),
+            "HTTP response 是服务端的应答"
+        );
+    }
+
+    #[test]
+    fn answer_filter_holds_reasoning_and_streams_answer() {
+        // 未知模型：思考段压住不发，见到结束标记后的内容立即流式发出
+        let mut filter = AnswerFilter::new(None);
+        assert!(filter.push("We need ").is_empty());
+        assert!(filter.push("answer. 1+1=").is_empty());
+        assert_eq!(filter.push("2.</think>2"), vec!["2".to_string()]);
+        assert_eq!(filter.push(" 个"), vec![" 个".to_string()]);
+        assert!(filter.finish().is_empty());
+        assert_eq!(filter.inline_thinking, Some(true));
+    }
+
+    #[test]
+    fn answer_filter_flushes_plain_answer_at_end_of_stream() {
+        // 未知模型但整段没有思考标记：流结束时整段放行，并记住这个模型不内联思考
+        let mut filter = AnswerFilter::new(None);
+        assert!(filter.push("## 背景引入").is_empty());
+        assert!(filter.push("\n正文").is_empty());
+        assert_eq!(filter.finish(), vec!["## 背景引入\n正文".to_string()]);
+        assert_eq!(filter.inline_thinking, Some(false));
+    }
+
+    #[test]
+    fn answer_filter_streams_directly_when_model_known_plain() {
+        let mut filter = AnswerFilter::new(Some(false));
+        assert_eq!(filter.push("第一段"), vec!["第一段".to_string()]);
+        assert_eq!(filter.push("第二段"), vec!["第二段".to_string()]);
+        assert!(filter.finish().is_empty());
+    }
+
+    #[test]
+    fn parse_sse_data_reads_content_only() {
+        // reasoning_content 是标准思考字段，绝不能当答案
+        let frame = r#"{"choices":[{"delta":{"reasoning_content":"思考","content":null}}]}"#;
+        assert_eq!(parse_sse_data(frame), None);
+        let frame = r#"{"choices":[{"delta":{"content":"答案"}}]}"#;
+        assert_eq!(
+            parse_sse_data(frame),
+            Some(SseEvent::Delta("答案".to_string()))
+        );
     }
 
     #[tokio::test]
@@ -1111,9 +1483,11 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(full, "你好，世界");
-        assert_eq!(
-            deltas,
-            vec!["你".to_string(), "好，世界".to_string()],
+        // 该模型首次出现（缓存未知）先压住内容、流结束再整段放行：
+        // 分片边界不再固定，但拼接结果必须等于全文，且空 delta / 注释行不推送
+        assert_eq!(deltas.concat(), full);
+        assert!(
+            deltas.iter().all(|d| !d.is_empty()),
             "空 delta 与注释行不应推送"
         );
         handle.join().unwrap();

@@ -30,6 +30,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::save_settings,
+            commands::take_thinking_notice,
             commands::test_llm_connection,
             commands::import_book,
             commands::list_books,
