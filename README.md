@@ -38,3 +38,51 @@ pnpm build                   # vue-tsc 严格检查 + 前端构建
 见 [ROADMAP.md](ROADMAP.md)：迭代 1 打磨日常可用性（流式输出、错题本、统计、打包），迭代 2 深化学习能力（划词解释、论文模式、难度分层出题、错题改编），迭代 3 做数据与扩展（统计图表、导出 Anki、概念图谱、云同步、自动更新）。
 
 详细范围、验收标准与取舍原则见该文件。
+
+## 上架 Apple Store（macOS）
+
+> 本应用面向 **Mac App Store** 发布；Tauri 同一代码也可出 Windows 安装包（NSIS）。
+
+### 需要准备
+
+- **Apple Developer Program** 账号（$99/年），记好你的 **Team ID**
+- Xcode 15+（SDK 15+）+ Command Line Tools
+
+### 上架前需要在仓库里替换的占位
+
+| 位置 | 字段 | 标注 |
+|------|------|------|
+| `src-tauri/tauri.conf.json` | `identifier` | 上架前改成你的域（如 `com.yourteam.aiteacher`）。⚠️ 它是 App Sandbox 容器和应用数据目录的 key，改动会导致老用户数据目录找不到——若已发布过，需要附迁移脚本 |
+| `src-tauri/tauri.conf.json` | `bundle.copyright` | 你真实的开发者/团队名 |
+| `src-tauri/tauri.conf.json` | `bundle.macOS.signingIdentity` | 开发与分发 `Developer ID Application: 你的名字 (TeamID)`；上架用 `3rd Party Mac Developer Application` |
+| `src-tauri/tauri.conf.json` | `bundle.macOS.entitlements` | 你写的 `entitlements.plist`（App Sandbox + 实际用到的权限，如文件读取、外网访问） |
+| `src-tauri/tauri.conf.json` | `bundle.macOS.providerShortName` | Team ID（发布前填） |
+| `src/views/SettingsView.vue` | 关于卡片的开发者/邮箱 | 你真实的联系信息（App Store 审核常用） |
+
+### 打包路径
+
+```bash
+# 签名发布构建（先配好 signingIdentity）
+pnpm tauri build
+
+# DMG 路径：
+src-tauri/target/release/bundle/dmg/AI 伴读_<version>_aarch64.dmg
+
+# App Store 上架走的是 .pkg / Product Archive（Tauri v2 打 dmg；上架需要
+# xcrun productbuild 调用 3rd Party Mac Developer Application 证书重新打包）*
+```
+
+### "上架前自查清单"（App Store 审核重点）
+
+- [ ] 无崩溃：启动 → 导入书 → 领读 → 做题 → 复习，完整链路不停顿
+- [ ] 隐私说明已提供（设置页"关于"区）：数据本地保存、LLM 直连
+- [ ] 没有跟踪/统计 SDK（本项目没有任何第三方分析代码）
+- [ ] NSIS 之外的安装包尺寸不小，DMG 是否正常
+- [ ] 应用图标已提供全套（`src-tauri/icons/`32x32 ~ 1024x1024）
+- [ ] "AI 伴读" 名称不与其他应用重名（上架前到 App Store Connect 查一下）
+- [ ] `bundle.category` = `public.app-category.education`（已配置）
+- [ ] `minimumSystemVersion` >= 13.0（已配置）
+
+### 隐私说明（设置页关于区展示文案，已配置）
+
+> 学习数据与个人配置仅保存在本机应用数据目录；LLM 请求直连你配置的接口地址；不经过任何中介服务器；应用不包含任何跟踪或分析代码。
