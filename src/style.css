@@ -280,6 +280,34 @@ h6 {
     border-radius: 14px;
   }
 
+  /* 默认按钮玻璃片（与桌面同源 --glass-* 参数；primary 实心保留） */
+  .main .n-button--default-type:not(.n-button--disabled):not(.n-button--loading),
+  .main .n-button--secondary-type:not(.n-button--disabled) {
+    background: rgba(255, 255, 255, 0.5);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+    border-color: var(--glass-border) !important;
+    box-shadow:
+      var(--glass-highlight),
+      0 1px 4px rgba(0, 0, 0, 0.05);
+  }
+
+  /* 按压动效：iOS 26 标志的"按下微缩、松开回弹" */
+  .main .n-button,
+  .tab-item,
+  .rail-item {
+    transition: transform 0.12s ease-out;
+  }
+
+  .main .n-button:active {
+    transform: scale(0.96);
+  }
+
+  .tab-item:active,
+  .rail-item:active {
+    transform: scale(0.94);
+  }
+
   .page-header {
     flex-direction: column;
     gap: 10px;
