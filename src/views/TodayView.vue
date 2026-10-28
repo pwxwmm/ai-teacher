@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <div class="page-header">
+    <div class="page-header today-header">
       <div>
         <h2 class="page-title">今日学习</h2>
         <div class="page-subtitle">完成到期复习，继续学习新单元</div>
@@ -10,9 +10,15 @@
       </n-button>
     </div>
 
-    <div v-if="plan" class="stats muted small">
-      今日已复习 {{ plan.reviewed_today }}/{{ plan.due_total }} · 连续学习 {{ plan.streak_days }} 天
-    </div>
+    <section v-if="plan" class="hero-card card">
+      <div class="ring" :style="{ '--pct': progressPct }">
+        <span class="ring-num">{{ plan.reviewed_today }}/{{ plan.due_total }}</span>
+      </div>
+      <div class="hero-text">
+        <div class="hero-line">今日已复习 {{ plan.reviewed_today }}/{{ plan.due_total }}</div>
+        <div class="muted small">连续学习 {{ plan.streak_days }} 天</div>
+      </div>
+    </section>
 
     <div v-if="loading && !plan" class="center-box">
       <n-spin size="large" />
@@ -200,6 +206,14 @@ const plan = ref<TodayPlan | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 
+const progressPct = computed(() => {
+  const p = plan.value;
+  if (!p) return 0;
+  return p.due_total > 0
+    ? Math.min(100, Math.round((p.reviewed_today / p.due_total) * 100))
+    : 100;
+});
+
 const reviewShow = ref(false);
 const taskLoading = ref(false);
 const taskError = ref<string | null>(null);
@@ -302,8 +316,54 @@ async function finishItem(passed: boolean): Promise<void> {
 </script>
 
 <style scoped>
-.stats {
-  margin: -10px 0 18px;
+/* 页头：窄屏也保持标题与刷新同行（通用 page-header 在 ≤820px 会改纵向堆叠，本页覆盖回来） */
+.today-header {
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+/* 进度英雄卡：苹果「今日」范式的玻璃大卡 + 环形进度 */
+.hero-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  margin: 2px 0 24px;
+}
+
+.ring {
+  --pct: 0;
+  position: relative;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: conic-gradient(var(--color-accent) calc(var(--pct) * 1%), rgba(0, 0, 0, 0.07) 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ring::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.ring-num {
+  position: relative;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-accent);
+  letter-spacing: -0.01em;
+}
+
+.hero-line {
+  font-size: 17px;
+  font-weight: 600;
+  margin-bottom: 2px;
 }
 
 .section {
