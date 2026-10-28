@@ -1010,11 +1010,15 @@ function renderMarkdown(src: string): string {
   font-size: 22px;
   font-weight: 300;
   line-height: 1;
-  /* 悬浮小圆钮：半透明白底 + 淡阴影，悬停变实并变绿；背景透明时 iOS 原生控件会画成方块，必须给底色 */
+  /* 液态玻璃圆钮：半透白 + 模糊 + 高光内边，悬停变实并变绿；背景透明时 iOS 原生控件会画成方块，必须给底色 */
   color: #6b7280;
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
-  border: none;
+  background: rgba(255, 255, 255, 0.55);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  backdrop-filter: blur(20px) saturate(170%);
+  border: 0.5px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 1px 6px rgba(0, 0, 0, 0.1);
   outline: none;
   opacity: 1;
   cursor: pointer;

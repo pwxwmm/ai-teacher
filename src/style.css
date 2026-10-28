@@ -10,6 +10,12 @@
   --bg-sidebar: #e9e9eb;
   --bg-elevated: #ffffff;
 
+  /* 液态玻璃（液面参数）：模糊 + 提饱和 + 高光内边。
+     ⚠ 只给"背后有东西可透"的界面用（侧栏、浮层、悬浮控件），白底内容区禁用 */
+  --glass-blur: blur(28px) saturate(180%);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.55);
+
   /* 文字（macOS 文字层级：深浅而非纯黑→纯白） */
   --text-primary: rgba(0, 0, 0, 0.85);
   --text-secondary: rgba(0, 0, 0, 0.55);
@@ -63,7 +69,51 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   color: var(--text-primary);
-  background: var(--bg-window);
+  /* 极淡冷调渐变：肉眼近乎平色，但给玻璃留出可透的层次 */
+  background:
+    radial-gradient(140% 60% at 8% -10%, rgba(32, 128, 240, 0.05), transparent 60%),
+    radial-gradient(120% 55% at 94% 0%, rgba(24, 160, 88, 0.04), transparent 55%),
+    linear-gradient(180deg, #f4f5f8 0%, var(--bg-window) 40%, #eceef3 100%);
+}
+
+/* ---------- 桌面液态玻璃（macOS 26 风，CSS 实现） ---------- */
+
+/* 1. 侧栏玻璃：半透明底 + 模糊 + 内侧高光，桌面唯一允许铺满的玻璃面 */
+@media (min-width: 821px) {
+  .app-sider,
+  .tablet-rail {
+    background: rgba(233, 233, 235, 0.72) !important;
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+  }
+
+  /* 2. 默认按钮（灰片型）→ 玻璃片；primary 实心保留 */
+  .main .n-button--default-type:not(.n-button--disabled):not(.n-button--loading),
+  .main .n-button--secondary-type:not(.n-button--disabled) {
+    background: rgba(255, 255, 255, 0.55);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+    border-color: var(--glass-border) !important;
+    box-shadow: var(--glass-highlight), 0 1px 4px rgba(0, 0, 0, 0.05);
+    transition: background-color 0.15s ease;
+  }
+
+  .main .n-button--default-type:not(.n-button--disabled):hover,
+  .main .n-button--secondary-type:not(.n-button--disabled):hover {
+    background: rgba(255, 255, 255, 0.78);
+  }
+}
+
+/* 3. 浮层（下拉/气泡/Dialog/消息条）→ 玻璃化（浮于内容之上，天然有"背后"） */
+.floating,
+.n-message,
+.n-dropdown-menu,
+.n-popconfirm,
+.n-dialog .n-card {
+  background: rgba(255, 255, 255, 0.72) !important;
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-color: var(--glass-border) !important;
 }
 
 /* ---------- 全局排版基调 ---------- */
