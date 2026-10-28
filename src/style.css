@@ -202,6 +202,40 @@ h6 {
   line-height: 1.5;
 }
 
+/* ---------- 行动按钮语言（两端通用） ---------- */
+
+/* tinted 胶囊行动按钮：主色淡底 + 主色文字（iOS tinted button），替代描边小白块 */
+.btn-tinted.n-button:not(.n-button--disabled) {
+  background: rgba(24, 160, 88, 0.13) !important;
+  color: var(--color-accent) !important;
+  border: none !important;
+  border-radius: 999px !important;
+  font-weight: 600;
+  height: 34px;
+  padding: 0 18px;
+  box-shadow: none !important;
+}
+
+.btn-tinted.n-button:not(.n-button--disabled):hover {
+  background: rgba(24, 160, 88, 0.2) !important;
+}
+
+/* 圆形图标按钮：页面头部轻量操作（iOS 导航图标片） */
+.btn-icon-circle.n-button:not(.n-button--disabled) {
+  width: 32px;
+  height: 32px;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  border: 0.5px solid var(--glass-border) !important;
+  background: rgba(255, 255, 255, 0.55);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  color: var(--text-secondary);
+  box-shadow:
+    var(--glass-highlight),
+    0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
 /* ---------- 通用容器质感 ---------- */
 
 /* 白卡片（内容容器）：干净的白底 + 细线分隔，无阴影——macOS 风格 */

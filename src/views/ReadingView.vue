@@ -134,7 +134,7 @@
                   >
                     掌握度 {{ Math.round((seg.unit.mastery ?? 0) * 100) }}%
                   </n-tag>
-                  <n-button size="small" type="primary" @click="router.push(`/quiz/${seg.unit.id}`)">
+                  <n-button class="btn-tinted" size="small" @click="router.push(`/quiz/${seg.unit.id}`)">
                     去闯关做题
                   </n-button>
                 </div>

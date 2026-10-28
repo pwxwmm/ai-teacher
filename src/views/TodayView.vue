@@ -5,11 +5,8 @@
         <h2 class="page-title">今日学习</h2>
         <div class="page-subtitle">完成到期复习，继续学习新单元</div>
       </div>
-      <n-button quaternary size="small" @click="refresh">
-        <template #icon>
-          <n-icon size="16"><RefreshOutline /></n-icon>
-        </template>
-        刷新
+      <n-button class="btn-icon-circle" quaternary title="刷新" @click="refresh">
+        <n-icon size="17"><RefreshOutline /></n-icon>
       </n-button>
     </div>
 
@@ -23,7 +20,7 @@
 
     <n-empty v-else-if="error" description="加载今日任务失败">
       <div class="muted small empty-extra">{{ error }}</div>
-      <n-button @click="refresh">重试</n-button>
+      <n-button class="btn-tinted" @click="refresh">重试</n-button>
     </n-empty>
 
     <template v-else-if="plan">
@@ -48,7 +45,7 @@
               </div>
               <div class="row-side">
                 <n-tag size="small" :bordered="false">到期日：{{ item.due_date }}</n-tag>
-                <n-button size="small" type="primary" @click="beginReview(item)">开始复习</n-button>
+                <n-button class="btn-tinted" size="small" @click="beginReview(item)">开始复习</n-button>
               </div>
             </div>
           </n-list-item>
@@ -67,7 +64,7 @@
                 <div class="row-title">{{ s.unit.title }}</div>
               </div>
               <div class="row-side">
-                <n-button size="small" @click="router.push(`/reading/${s.unit.id}`)">
+                <n-button class="btn-tinted" size="small" @click="router.push(`/reading/${s.unit.id}`)">
                   开始学习
                 </n-button>
               </div>
