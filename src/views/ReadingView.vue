@@ -763,6 +763,12 @@ function renderMarkdown(src: string): string {
   border-radius: 6px;
 }
 
+@media (max-width: 1100px) {
+  .ai-col {
+    width: 320px;
+  }
+}
+
 @media (max-width: 900px) {
   .reading-main {
     flex-direction: column;
