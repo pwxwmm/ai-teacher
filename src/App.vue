@@ -334,13 +334,16 @@ watch(
   z-index: 100;
   display: flex;
   align-items: stretch;
-  border-radius: 22px;
+  border-radius: 26px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.96);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-  backdrop-filter: blur(24px) saturate(170%);
-  border: 1px solid var(--border-subtle);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.62);
+  -webkit-backdrop-filter: blur(34px) saturate(190%);
+  backdrop-filter: blur(34px) saturate(190%);
+  border: 0.5px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.03),
+    0 10px 32px rgba(15, 35, 60, 0.16);
 }
 
 .tab-item {
@@ -362,6 +365,14 @@ watch(
 
 .tab-item.active {
   color: var(--color-accent);
+  /* iOS 26 选中项：小型玻璃透镜（高光内边 + 微投影） */
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 18px;
+  margin: 4px;
+  padding: 5px 0 3px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 1px 6px rgba(0, 0, 0, 0.06);
 }
 
 .tab-item.continue {

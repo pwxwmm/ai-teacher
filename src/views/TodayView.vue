@@ -352,6 +352,18 @@ async function finishItem(passed: boolean): Promise<void> {
   flex-shrink: 0;
 }
 
+@media (max-width: 820px) {
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .row-side {
+    justify-content: space-between;
+  }
+}
+
 .review-source {
   margin-bottom: 16px;
 }
