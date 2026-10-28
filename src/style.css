@@ -1,3 +1,47 @@
+/* ============================================================
+   AI 伴读设计系统 v2（Apple Human Interface Guidelines）
+   原则：内容优先，容器退后；细线分隔，圆角克制；层级靠留白，不用堆阴影
+   ============================================================ */
+
+:root {
+  /* 基底：双区体系——内容区比侧栏深一档（Apple Music 同款，让白与灰分出层次） */
+  --bg-window: #f2f2f4;
+  --bg-content: #ffffff;
+  --bg-sidebar: #e9e9eb;
+  --bg-elevated: #ffffff;
+
+  /* 文字（macOS 文字层级：深浅而非纯黑→纯白） */
+  --text-primary: rgba(0, 0, 0, 0.85);
+  --text-secondary: rgba(0, 0, 0, 0.55);
+  --text-tertiary: rgba(0, 0, 0, 0.38);
+
+  /* 分隔（Apple 用 1px 实线分隔器，非阴影） */
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
+
+  /* 圆角：macOS 内容为 8px 窗口级大圆角，控件 6-8px 小圆角 */
+  --radius-card: 10px;
+  --radius-control: 7px;
+  --radius-badge: 12px;
+
+  /* 间距（12 为基准，16/20/24 组合为常用节奏） */
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 20px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+
+  /* 强调色（保留现有 Naive UI 的绿色仍是正确的，做了一点提亮） */
+  --color-accent: #18a058;
+  --color-accent-info: #2080f0;
+  --color-focus-ring: rgba(24, 160, 88, 0.25);
+
+  /* 阴影：只做必要的悬浮（浮层、下拉、 Dialog 这类），不做卡片级阴影 */
+  --shadow-float: 0 4px 24px rgba(0, 0, 0, 0.12);
+  --shadow-tooltip: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
 html,
 body,
 #app {
@@ -7,43 +51,73 @@ body,
 
 body {
   font-family:
-    "Segoe UI",
+    -apple-system,
+    BlinkMacSystemFont,
     "PingFang SC",
+    "Hiragino Sans GB",
     "Microsoft YaHei",
-    system-ui,
     sans-serif;
-  /* Liquid Glass 基底：玻璃背后必须有层次，纯色底出不来玻璃感 */
-  background:
-    radial-gradient(at 12% 8%, rgba(168, 198, 255, 0.38) 0, transparent 55%),
-    radial-gradient(at 88% 18%, rgba(255, 205, 225, 0.3) 0, transparent 50%),
-    radial-gradient(at 82% 88%, rgba(190, 232, 210, 0.34) 0, transparent 55%),
-    linear-gradient(160deg, #f4f7fb 0%, #eff2f8 55%, #edf0f6 100%);
-  background-attachment: fixed;
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  color: var(--text-primary);
+  background: var(--bg-window);
 }
 
-/* 玻璃容器通用质感：模糊 + 提饱和 + 清透底 + 顶部高光内边（液态玻璃的关键是内高光，不是外阴影） */
-.glass {
-  background: rgba(255, 255, 255, 0.55);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  backdrop-filter: blur(20px) saturate(180%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.7),
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.35),
-    0 8px 28px rgba(31, 38, 61, 0.12);
+/* ---------- 全局排版基调 ---------- */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
-/* 让玻璃基底透出：Naive UI 布局层默认实色，会盖住 body 渐变 */
-.n-layout,
-.n-layout .n-layout-scroll-container,
-.n-layout-content,
-.n-layout-sider .n-layout-scroll-container {
-  background: transparent !important;
+/* 选区（macOS 克制感：选区颜色与平台一致） */
+::selection {
+  background: rgba(24, 160, 88, 0.22);
 }
+
+/* 焦点环（可访问性，对键盘用户友好） */
+:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 滚动条（干净细线，随系统主题显示） */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.16);
+  border-radius: 5px;
+  border: 2.5px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28);
+  border: 2.5px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- 页面容器 ---------- */
 
 .page {
-  max-width: 960px;
+  max-width: 980px;
   margin: 0 auto;
-  padding-bottom: 48px;
+  padding-bottom: 56px;
 }
 
 .page-header {
@@ -51,17 +125,76 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .page-title {
   margin: 0;
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
 }
 
-/* 手机：标题区竖排、字号收紧（App.vue 约定 ≤820px 为移动端断点） */
+.page-subtitle {
+  margin-top: 5px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.muted {
+  color: var(--text-secondary);
+}
+
+.small {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ---------- 通用容器质感 ---------- */
+
+/* 白卡片（内容容器）：干净的白底 + 细线分隔，无阴影——macOS 风格 */
+.card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+
+/* 悬浮（下拉、suggest、modal）：浮层才允许阴影 */
+.floating {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-float);
+}
+
+/* 空态/加载态：居中使用，用呼吸感留白代替复杂动画 */
+.center-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 88px 0;
+}
+
+.center-box.small-pad {
+  padding: 44px 0;
+}
+
+.empty-extra {
+  margin: 10px 0 14px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+/* ---------- 分屏布局（macOS 总支栏体系） ---------- */
+
+/* 侧栏：淡灰底 + 1px 细分隔，菜单项目间距从系统默认的 28px 改为 12px 紧凑态 */
+
+/* ---------- 手机端（底部 tab 栏下的安全区与内容比较） ---------- */
+
 @media (max-width: 820px) {
   .page-header {
     flex-direction: column;
@@ -69,41 +202,14 @@ body {
   }
 
   .page-title {
-    font-size: 19px;
+    font-size: 22px;
   }
 
   .center-box {
-    padding: 48px 0;
+    padding: 56px 0;
   }
-}
 
-.page-subtitle {
-  margin-top: 4px;
-  font-size: 13px;
-  color: rgba(0, 0, 0, 0.45);
-}
-
-.muted {
-  color: rgba(0, 0, 0, 0.45);
-}
-
-.small {
-  font-size: 13px;
-}
-
-.center-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 80px 0;
-}
-
-.center-box.small-pad {
-  padding: 40px 0;
-}
-
-.empty-extra {
-  margin: 8px 0 12px;
+  body {
+    font-size: 15px;
+  }
 }
