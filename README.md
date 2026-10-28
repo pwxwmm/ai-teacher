@@ -53,11 +53,11 @@ pnpm build                   # vue-tsc 严格检查 + 前端构建
 | 位置 | 字段 | 标注 |
 |------|------|------|
 | `src-tauri/tauri.conf.json` | `identifier` | 上架前改成你的域（如 `com.yourteam.aiteacher`）。⚠️ 它是 App Sandbox 容器和应用数据目录的 key，改动会导致老用户数据目录找不到——若已发布过，需要附迁移脚本 |
-| `src-tauri/tauri.conf.json` | `bundle.copyright` | 你真实的开发者/团队名 |
+| `src-tauri/tauri.conf.json` | `bundle.copyright` | 已填真实开发者：`libolun & weimengmeng` |
 | `src-tauri/tauri.conf.json` | `bundle.macOS.signingIdentity` | 开发与分发 `Developer ID Application: 你的名字 (TeamID)`；上架用 `3rd Party Mac Developer Application` |
 | `src-tauri/tauri.conf.json` | `bundle.macOS.entitlements` | 你写的 `entitlements.plist`（App Sandbox + 实际用到的权限，如文件读取、外网访问） |
 | `src-tauri/tauri.conf.json` | `bundle.macOS.providerShortName` | Team ID（发布前填） |
-| `src/views/SettingsView.vue` | 关于卡片的开发者/邮箱 | 你真实的联系信息（App Store 审核常用） |
+| `src/views/SettingsView.vue` | 关于卡片的开发者 | 已填真实开发者：`libolun、weimengmeng` |
 
 ### 打包路径
 

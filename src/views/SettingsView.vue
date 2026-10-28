@@ -86,7 +86,7 @@
       </div>
       <div class="about-section">
         <div class="about-label">开发者</div>
-        <div class="muted small">你的名字或团队 · 联系邮箱：team@example.com</div>
+        <div class="muted small">libolun、weimengmeng</div>
       </div>
       <div class="about-section">
         <div class="about-label">隐私说明</div>
