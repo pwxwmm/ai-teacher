@@ -15,7 +15,9 @@
         "title": "AI 伴读",
         "width": 1100,
         "height": 720,
-        "label": "main"
+        "label": "main",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
