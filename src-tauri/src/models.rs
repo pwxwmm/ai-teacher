@@ -65,7 +65,7 @@ pub struct LlmSettings {
     pub model: String,
     /// 打开全新章节时是否自动开始 AI 领读；默认关闭（手动点"开始领读"才生成）
     pub auto_start_reading: bool,
-    /// 关闭模型思考模式提速：按 base_url 识别厂商方言注入关思考参数（见 llm::thinking_off_params）
+    /// 关闭模型思考模式提速：按 OpenAI 兼容协议注入 `reasoning_effort`（none/medium，见 llm::thinking_params）
     pub disable_thinking: bool,
 }
 
@@ -76,7 +76,7 @@ impl Default for LlmSettings {
             api_key: String::new(),
             model: "deepseek-chat".to_string(),
             auto_start_reading: false,
-            disable_thinking: false,
+            disable_thinking: true,
         }
     }
 }

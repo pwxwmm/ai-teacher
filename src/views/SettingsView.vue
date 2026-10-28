@@ -63,12 +63,13 @@
         </div>
       </div>
       <div class="switch-row">
-        <n-switch v-model:value="form.disable_thinking" :disabled="loading" />
+        <n-switch v-model:value="thinkingEnabled" :disabled="loading" />
         <div>
-          <div>关闭模型思考模式（提速）</div>
+          <div>思考模式</div>
           <div class="muted small">
-            默认关闭。开启后按接口地址识别厂商方言注入关思考参数：阿里系 enable_thinking=false、智谱/火山
-            thinking=disabled，未识别网关两种都带；DeepSeek 官方无参数可关，由模型名（chat/reasoner）决定。
+            默认关闭（提速）。关闭时向接口发送 reasoning_effort=none，打开时发送 reasoning_effort=medium；
+            只走 OpenAI 兼容协议。模型不支持该参数时会自动去掉参数、按模型默认继续，并提示一次。
+            思考内容本身永远不会显示在页面上（思考期间只显示"正在思考"）。
           </div>
         </div>
       </div>
@@ -88,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import {
   NAlert,
   NButton,
@@ -112,7 +113,14 @@ const form = reactive<LlmSettings>({
   api_key: "",
   model: "",
   auto_start_reading: false,
-  disable_thinking: false,
+  disable_thinking: true,
+});
+// UI 上的「思考模式」开关：开 = 明确要求思考，关 = 明确关闭（存的是 disable_thinking）
+const thinkingEnabled = computed({
+  get: () => !form.disable_thinking,
+  set: (v: boolean) => {
+    form.disable_thinking = !v;
+  },
 });
 const loading = ref(true);
 const loadError = ref<string | null>(null);

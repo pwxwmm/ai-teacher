@@ -292,6 +292,12 @@ const route = useRoute();
 const router = useRouter();
 const message = useMessage();
 
+// 模型不支持思考参数时，后端会降级并留一条一次性提示，AI 动作结束后取走展示
+async function notifyThinking(): Promise<void> {
+  const notice = await api.takeThinkingNotice().catch(() => null);
+  if (notice) message.warning(notice);
+}
+
 const unitId = computed(() => Number(route.params.unitId));
 const invalidId = computed(() => !Number.isInteger(unitId.value) || unitId.value <= 0);
 const focusUnitId = computed(() => Number(route.query.focus));
@@ -556,6 +562,7 @@ async function startReading(): Promise<void> {
     message.error(`领读失败：${readError.value}`);
   } finally {
     reading.value = false;
+    void notifyThinking();
   }
 }
 
@@ -582,6 +589,7 @@ async function onAsk(): Promise<void> {
     message.error(`提问失败：${entry.error}`);
   } finally {
     asking.value = false;
+    void notifyThinking();
   }
 }
 
@@ -654,6 +662,7 @@ async function askRound(q: string): Promise<void> {
     message.error(`提问失败：${round.error}`);
   } finally {
     askStreaming.value = false;
+    void notifyThinking();
   }
 }
 

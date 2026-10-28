@@ -41,13 +41,13 @@ cd src-tauri && cargo test  # 后端全部测试（离线、无需 Tauri 运行�
 src/                  # Vue 前端（views/ 七个页面，stores/ 仅 library 缓存）
 src/api.ts            # 前后端契约
 src-tauri/src/
-├── lib.rs            # 入口：注册 dialog 插件、AppState、26 个命令
+├── lib.rs            # 入口：注册 dialog 插件、AppState、27 个命令
 ├── commands.rs       # Tauri 命令薄壳 + 可测试的 *_impl 业务逻辑
 ├── models.rs         # API 类型（serde snake_case）
 ├── db.rs             # SQLite 迁移与查询（仅建表不 ALTER；确需修改已有表的列时，必须在提交说明中注明原因；含 learning_log/unit_summaries/chapter_explanations/quiz_batches；测试用 open_in_memory）
 ├── config.rs         # app_data_dir/config.json（api_key、auto_start_reading、disable_thinking 等，勿入库勿进 git；新字段靠 serde default 兼容旧文件）
 ├── ingest.rs         # 书籍解析与 1500–3000 字单元切分；EPUB 插图抽到 books/<id>/images/，正文插 `![alt](文件名)` 标记段，前端原位渲染
-├── llm.rs            # OpenAI 兼容客户端 + 中文 prompt + mock 模式（长文本输出走 SSE 流式；disable_thinking 开关注入关思考参数，厂商方言见 thinking_off_params）
+├── llm.rs            # OpenAI 兼容客户端 + 中文 prompt + mock 模式（长文本输出走 SSE 流式；disable_thinking 开关注入 OpenAI 兼容的 reasoning_effort=none/medium，模型 400/422 拒绝时去掉参数重试一次并留一次性提示 take_thinking_notice；思考内容剥离见 AnswerFilter / strip_thinking）
 └── scheduler.rs      # SM-2 调度（基线间隔 [1,2,4,7,15,30]，ease 2.5/≥1.3）
 fixtures/demo-book.md # 端到端与测试用的示例书（3 章）
 ```
@@ -63,7 +63,8 @@ fixtures/demo-book.md # 端到端与测试用的示例书（3 章）
 - 单元状态 skipped（无需掌握）：书详情页章/小节 ✔ 标记（`set_unit_skipped`/`set_chapter_skipped`），进度 done_units 计入 done+skipped、标记时删除该单元复习项；领读不回退（`ensure_unit_registered` 仅 unread→reading）、重新出题回退 reading、答完全部题转 done；取消标记回 unread、复习项随下次领读幂等重建
 - 重新出题（`regenerate_quiz`）：旧题整批退役**不删除**（`quiz_batches` 表记活跃批次边界 id，`list_questions`/`count_questions`/`latest_attempts` 只看当前批次），错题本/复习项/作答记录继续引用旧题、重练照旧；单元已 done/skipped 则退回 reading 并清空 mastery，新批次答完重算
 - 复习通过/失败都走 `scheduler.next_schedule` 更新 ease/reps/interval/due_date，条目永不删除
-- 流式（stream=true 常开）：仅领读 explain/答疑 ask/选词问 ask_selection（含对应章级 start_chapter_reading/ask_chapter/ask_chapter_selection）走 SSE，经 `tauri::ipc::Channel<String>` 推到前端（api.ts `streamArg` 助手）；出题/判分等 JSON 输出必须整段解析，不流式
+- 流式（stream=true 常开）：仅领读 explain/答疑 ask/选词问 ask_selection（含对应章级 start_chapter_reading/ask_chapter/ask_chapter_selection）走 SSE，经 `tauri::ipc::Channel<String>` 推到前端（api.ts `streamArg` 助手）；出题/判分等 JSON 输出必须整段解析，不流式；部分网关把思考独白直接拼进 `content`（以 `</think>` 结尾、无开标签），`AnswerFilter` 先压住前缀、见到结束标记后只推答案，非流式 `chat` 用 `strip_thinking` 同样剥离；"该模型是否内联思考"按 (base_url, model, disable_thinking) 缓存在内存，首次未知时整段缓冲、结束再放行；旧库里的讲解/摘要读取时也过 `strip_thinking`（`chapter_explanations` / `unit_summaries`），避免旧思考继续展示或污染上下文；思考开关默认关闭，只按 OpenAI 兼容协议发 `reasoning_effort`（none/medium），模型 400/422 拒绝时去掉参数重试一次、留一次性提示 `take_thinking_notice`，厂商方言留待以后做独立协议适配
+- 阅读页划词问 AI **不设选中字数上限**（选多长都能问）；选中超过 500 字时，弹窗顶部提示「已选中 N 字的大段正文…可能产生更多费用」，只提示不拦截；选中原文整段原样随 prompt 发出，后端不截断 quote
 - 领读上下文：单元首次领读时生成摘要存 `unit_summaries`（幂等）；领读/答疑带前一单元摘要，无摘要降级为它标题 + 开头摘录
 - 错题状态无独立字段：从 attempts 按题最近一次记录派生（有答错记录即入错题本，最近答对即"已解决"），重练直接复用 `submit_answer`
 - 今日统计源自 `learning_log`（一行一事件：答题记 'answer'、复习记 'review'）：今日已复习 x/y = 今日复习数 /（今日复习数+剩余到期数），连续天数从今天（无记录则昨天）往回数

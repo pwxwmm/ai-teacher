@@ -58,7 +58,11 @@ pub fn save_settings_to(app_data_dir: &Path, settings: &LlmSettings) -> Result<(
 fn prev_context(db: &Db, unit: &UnitRow) -> Option<String> {
     let prev = db.prev_unit(unit.id).ok()??;
     if let Some(summary) = db.get_unit_summary(prev.id).ok().flatten() {
-        return Some(format!("《{}》：{}", prev.title, summary));
+        // 旧版本可能把模型思考存进了摘要，读出来先剥掉，避免污染后续领读上下文
+        let summary = llm::strip_thinking(&summary);
+        if !summary.trim().is_empty() {
+            return Some(format!("《{}》：{}", prev.title, summary));
+        }
     }
     let content = read_unit_content(&prev).ok()?;
     let excerpt: String = content.chars().take(300).collect();
@@ -242,9 +246,17 @@ pub fn get_chapter_content_impl(db: &Db, unit_id: i64) -> Result<ChapterContent,
         .get_chapter_explanation(first_unit_id)
         .ok()
         .flatten()
-        .map(|(explanation, knowledge_points)| ReadingSession {
-            explanation,
-            knowledge_points,
+        .and_then(|(explanation, knowledge_points)| {
+            // 旧版本可能把模型思考存进了讲解，展示前先剥掉；剥完为空就当没存过，让用户重新领读
+            let explanation = llm::strip_thinking(&explanation);
+            if explanation.trim().is_empty() {
+                None
+            } else {
+                Some(ReadingSession {
+                    explanation,
+                    knowledge_points,
+                })
+            }
         });
     Ok(ChapterContent {
         book_title: scope.book_title,
@@ -850,6 +862,12 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<LlmSettings, String> {
 #[tauri::command]
 pub fn save_settings(state: State<'_, AppState>, settings: LlmSettings) -> Result<(), String> {
     save_settings_to(&state.app_data_dir, &settings)
+}
+
+/// 取走一条"模型不支持思考参数"的提示；前端在 AI 动作结束后调用并展示。
+#[tauri::command]
+pub fn take_thinking_notice() -> Option<String> {
+    llm::take_thinking_notice()
 }
 
 #[tauri::command]
@@ -2032,6 +2050,53 @@ mod tests {
         let (db, dir, ids) = setup_chapter_book("no-saved");
         let ch = get_chapter_content_impl(&db, ids[0]).unwrap();
         assert!(ch.saved_session.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn chapter_content_strips_thinking_from_saved_explanation() {
+        let (db, dir, ids) = setup_chapter_book("saved-thinking");
+        db.upsert_chapter_explanation(
+            ids[0],
+            "用户要求我通读整章……</think>## 背景引入\n正文",
+            &["知识点".to_string()],
+            "2026-10-09 10:00:00",
+        )
+        .unwrap();
+        let ch = get_chapter_content_impl(&db, ids[0]).unwrap();
+        let saved = ch.saved_session.expect("应有讲解");
+        assert_eq!(saved.explanation, "## 背景引入\n正文");
+        assert_eq!(saved.knowledge_points, vec!["知识点".to_string()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn chapter_content_drops_saved_explanation_that_is_only_thinking() {
+        let (db, dir, ids) = setup_chapter_book("saved-only-thinking");
+        db.upsert_chapter_explanation(
+            ids[0],
+            "用户要求我通读整章……</think>",
+            &[],
+            "2026-10-09 10:00:00",
+        )
+        .unwrap();
+        let ch = get_chapter_content_impl(&db, ids[0]).unwrap();
+        assert!(ch.saved_session.is_none(), "只剩思考时应视为未领读");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn prev_context_strips_thinking_from_saved_summary() {
+        let (db, dir, ids) = setup_chapter_book("summary-thinking");
+        db.upsert_unit_summary(
+            ids[0],
+            "思考过程……</think>本单元摘要",
+            "2026-10-09 10:00:00",
+        )
+        .unwrap();
+        let unit = db.get_unit(ids[1]).unwrap().unwrap();
+        let ctx = prev_context(&db, &unit).unwrap();
+        assert_eq!(ctx, "《第一章（1）》：本单元摘要");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

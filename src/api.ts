@@ -7,7 +7,7 @@ export interface LlmSettings {
   api_key: string;
   model: string;
   auto_start_reading: boolean; // 打开全新章节时自动开始 AI 领读；默认 false
-  disable_thinking: boolean; // 关闭模型思考模式提速（按接口地址识别厂商方言）；默认 false
+  disable_thinking: boolean; // 关闭模型思考模式提速（OpenAI 兼容协议 reasoning_effort）；默认 true
 }
 
 export interface ConnectionTestResult {
@@ -163,6 +163,8 @@ export const api = {
   getSettings: () => call<LlmSettings>("get_settings"),
   saveSettings: (settings: LlmSettings) => call<void>("save_settings", { settings }),
   testLlmConnection: () => call<ConnectionTestResult>("test_llm_connection"),
+  // 取走一条"模型不支持思考参数"的一次性提示（AI 动作结束后调用）
+  takeThinkingNotice: () => call<string | null>("take_thinking_notice"),
 
   // 书架
   importBook: (path: string) => call<BookSummary>("import_book", { path }),
