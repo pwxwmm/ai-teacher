@@ -185,9 +185,17 @@ fn parse_pdf(path: &Path) -> Result<Vec<Chapter>, String> {
     Ok(chapters)
 }
 
-/// 按页提取文本。pdf-extract 遇到非 Identity-H 编码的字体会 assert 崩溃，
-/// 且 panic 发生在库内部（整本一起解析），只能整本兜底成可读错误。
+/// 按页提取文本：先走 pdf-extract（版式还原更好）；它对 GBK-EUC-H 等预定义
+/// CMap 编码直接 assert 崩溃且不含文字时，回退 lopdf（支持编码更广但按原文
+/// 绘制顺序逐字输出，需要再合并单字行）。
 fn extract_pdf_pages(path: &Path) -> Result<Vec<String>, String> {
+    match extract_with_pdf_extract(path) {
+        Ok(pages) if pages.iter().any(|p| !p.trim().is_empty()) => Ok(pages),
+        Ok(_) | Err(_) => extract_with_lopdf(path),
+    }
+}
+
+fn extract_with_pdf_extract(path: &Path) -> Result<Vec<String>, String> {
     // 静音这段时间的 panic 输出：库内部的 assert 对用户只是噪音，错误由下方统一提示。
     let previous_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
@@ -198,11 +206,54 @@ fn extract_pdf_pages(path: &Path) -> Result<Vec<String>, String> {
     match result {
         Ok(Ok(pages)) => Ok(pages),
         Ok(Err(e)) => Err(format!("无法解析 PDF：{e}")),
+        Err(_) => Err("无法解析 PDF：该文件使用了暂不支持的字体编码".to_string()),
+    }
+}
+
+fn extract_with_lopdf(path: &Path) -> Result<Vec<String>, String> {
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let doc = lopdf::Document::load(path).map_err(|e| format!("无法解析 PDF：{e}"))?;
+        let mut pages: Vec<u32> = doc.get_pages().keys().cloned().collect();
+        pages.sort_unstable();
+        pages
+            .iter()
+            .map(|n| Ok(doc.extract_text(&[*n]).unwrap_or_default()))
+            .collect::<Result<Vec<_>, String>>()
+    }));
+    std::panic::set_hook(previous_hook);
+    match result {
+        Ok(Ok(pages)) if pages.iter().any(|p| !p.trim().is_empty()) => {
+            Ok(pages.iter().map(|p| merge_glyph_runs(p)).collect())
+        }
+        Ok(Ok(_)) => Err("PDF 中没有可提取的文本内容（可能是扫描件或纯图片 PDF）".to_string()),
+        Ok(Err(e)) => Err(format!(
+            "{e}。可尝试用阅读器另存为 PDF 或先转成 EPUB/TXT 后再导入"
+        )),
         Err(_) => Err(
-            "无法解析 PDF：该文件使用了暂不支持的字体编码（常见于部分中文排版软件导出的 PDF）。\
+            "无法解析 PDF：该文件可能已损坏或使用了暂不支持的结构。\
              可尝试用阅读器另存为 PDF 或先转成 EPUB/TXT 后再导入"
                 .to_string(),
         ),
+    }
+}
+
+/// lopdf 对逐字绘制的页面每个字库单独成行；把「单行只两三个字」占主导的页面
+/// 合并回连贯文本（行内换行视为排版而非语义，不受影响行多的页面按原样保留）。
+fn merge_glyph_runs(page: &str) -> String {
+    let lines: Vec<&str> = page.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.len() < 8 {
+        return page.to_string();
+    }
+    let short = lines
+        .iter()
+        .filter(|l| l.trim().chars().count() <= 3)
+        .count();
+    if short * 5 >= lines.len() * 3 {
+        lines.iter().map(|l| l.trim()).collect()
+    } else {
+        page.to_string()
     }
 }
 
@@ -234,22 +285,37 @@ fn strip_running_headers(pages: &[String]) -> Vec<String> {
         .filter(|(_, n)| *n >= threshold)
         .map(|(k, _)| k)
         .collect();
-    if repeated.is_empty() {
-        return pages.to_vec();
-    }
     pages
         .iter()
         .map(|page| {
-            let lines = pdf_lines(page);
-            let total = lines.len();
+            let lines: Vec<&str> = page.lines().collect();
+            // 非空行在原行号序列中的位置（边缘判定基于非空行序号）
+            let significant: Vec<usize> = lines
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| !l.trim().is_empty())
+                .map(|(i, _)| i)
+                .collect();
+            let total = significant.len();
             lines
-                .into_iter()
+                .iter()
                 .enumerate()
                 .filter(|(i, line)| {
-                    let at_edge = *i < EDGE_LINES || i + EDGE_LINES >= total;
-                    !(at_edge && repeated.contains(&normalize_heading(line)))
+                    let trimmed = line.trim();
+                    // 空行原样保留：pdf-extract 输出的段落分隔依赖空行结构，
+                    // 重组时塌缩成 \n 会导致后续 join_wrapped_lines 把整页并成一段
+                    if trimmed.is_empty() {
+                        return true;
+                    }
+                    let idx = significant.iter().position(|p| p == i).unwrap_or(0);
+                    let at_edge = idx < EDGE_LINES || idx + EDGE_LINES >= total;
+                    // 页码行（纯数字、- 42 -、第 3 页 等）位置固定且每页不同，直接剔除
+                    if at_edge && is_page_number(trimmed) {
+                        return false;
+                    }
+                    !(at_edge && repeated.contains(&normalize_heading(trimmed)))
                 })
-                .map(|(_, line)| line)
+                .map(|(_, line)| *line)
                 .collect::<Vec<_>>()
                 .join("\n")
         })
@@ -261,6 +327,31 @@ fn pdf_lines(page: &str) -> Vec<String> {
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty())
         .collect()
+}
+
+/// 判断一行是否为孤立页码：`42`、`- 42 -`、`[42]`、`第 3 页`、`42/128` 等。
+fn is_page_number(line: &str) -> bool {
+    let t = line.trim();
+    let core = t
+        .trim_matches(|c: char| c == '-' || c == '—' || c == '–' || c.is_whitespace())
+        .trim_matches(|c: char| ['[', ']', '(', ')'].contains(&c));
+    if !core.is_empty() && core.chars().all(|c| c.is_ascii_digit()) {
+        return true;
+    }
+    if let Some((num, total)) = core.split_once('/') {
+        return !num.is_empty()
+            && !total.is_empty()
+            && num.chars().all(|c| c.is_ascii_digit())
+            && total.chars().all(|c| c.is_ascii_digit());
+    }
+    if let Some(mid) = t.strip_prefix('第').and_then(|r| r.strip_suffix('页')) {
+        let mid = mid.trim();
+        return !mid.is_empty()
+            && mid
+                .chars()
+                .all(|c| c.is_ascii_digit() || "一二三四五六七八九十百零〇两".contains(c));
+    }
+    false
 }
 
 /// 标题比较用的归一化键：去空白、小写。
@@ -315,7 +406,8 @@ fn needs_space(prev: char, next: char) -> bool {
     prev.is_ascii_alphanumeric() && next.is_ascii_alphanumeric()
 }
 
-/// 归一化：康熙部首（U+2F00 起）→ 对应统一汉字，全角空格 → 半角，合并连续空白。
+/// 归一化：康熙部首（U+2F00 起）→ 对应统一汉字，全角空格 → 半角，合并连续空白，
+/// 并抹掉文本内混排的控制字符（部分 PDF 会在每个对象间插入 \u{0}..\u{1f}）。
 /// 部分中文排版软件导出的 PDF 会把正文里的汉字映射到康熙部首区，不归一化会断句断词。
 fn clean_pdf_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -324,6 +416,7 @@ fn clean_pdf_text(text: &str) -> String {
         let mapped = match ch {
             '\u{2f00}'..='\u{2fd5}' => kangxi_to_unified(ch).unwrap_or(ch),
             '\u{3000}' => ' ',
+            '\0'..='\u{8}' | '\u{b}' | '\u{c}' | '\u{e}'..='\u{1f}' | '\u{7f}' => continue,
             c if c.is_whitespace() && c != '\n' => ' ',
             c => c,
         };
@@ -1658,6 +1751,69 @@ mod tests {
     }
 
     #[test]
+    fn pdf_control_characters_stripped() {
+        // 实测部分 PDF（Pro 6000D 测试报告）逐对象输出后残留 \u{1} 等控制字符
+        assert_eq!(clean_pdf_text("Pro\u{1}6000D\u{1}异构\u{7f}测试"), "Pro6000D异构测试");
+        assert_eq!(clean_pdf_text("正常文本\u{0}继续"), "正常文本继续");
+    }
+
+    #[test]
+    fn pdf_page_number_lines_detected() {
+        assert!(is_page_number("42"));
+        assert!(is_page_number("- 42 -"));
+        assert!(is_page_number("— 128 —"));
+        assert!(is_page_number("[7]"));
+        assert!(is_page_number("3/128"));
+        assert!(is_page_number("第 3 页"));
+        assert!(is_page_number("第 二十 页"));
+        // 正文里的数字不应误判
+        assert!(!is_page_number("第 3 页讲的是要点"));
+        assert!(!is_page_number("42 条规则"));
+        assert!(!is_page_number("第 42 题"));
+    }
+
+    #[test]
+    fn pdf_strip_preserves_blank_line_structure() {
+        // pdf-extract 输出的段落分隔依赖空行（\n\n）；strip 重组时若塌缩成 \n，
+        // 会把整页并成一段、标题识别全灭（实测 Alluxio 51 章掉到 1 章）
+        let pages = vec![
+            "一、章节标题\n\n正文段一。\n\n正文段二。".to_string(),
+            "一、另一标题\n\n正文段三。".to_string(),
+            "一、第三标题\n\n正文段四。".to_string(),
+        ];
+        let stripped = strip_running_headers(&pages);
+        assert_eq!(stripped, pages, "无页眉页码时输出必须与输入一致");
+    }
+
+    #[test]
+    fn pdf_page_numbers_removed_at_edges() {
+        let page = |n: i32, body: &str| format!("书名页眉\n{body}\n- {n} -");
+        let pages = vec![
+            page(1, "第一段。"),
+            page(2, "第二段。"),
+            page(3, "第三段。"),
+        ];
+        let stripped = strip_running_headers(&pages);
+        assert!(stripped.iter().all(|p| !p.contains('1')));
+        assert!(stripped.iter().any(|p| p.contains("第一段。")));
+    }
+
+    #[test]
+    fn pdf_glyph_runs_merged() {
+        // 逐字绘制的页面：lopdf 提取结果每行一个字，应合并回连贯文本
+        let page = (1..=10).map(|_| "字 \n").collect::<String>();
+        assert_eq!(merge_glyph_runs(&page), "字字字字字字字字字字");
+
+        // 正常版式的行距大得多，不应合并
+        let normal = "第一行有十个字符以上啊\n第二行内容也很长很长\n第三行同样是个完整句子\n第四行结束\n第五行开始\n第六行中间\n第七行后面\n第八行末尾\n第九行收尾\n第十行最后";
+        assert_eq!(merge_glyph_runs(normal), normal);
+
+        // 行数过少不启用（避免误判）
+        let few = "字\n字\n字";
+        assert_eq!(merge_glyph_runs(few), few);
+    }
+
+    #[test]
     fn href_resolution() {
         assert_eq!(
             resolve_href("OEBPS", "text/a1.xhtml"),
@@ -2117,4 +2273,9 @@ mod tests {
         assert!(back.trim_start_matches(['…', '\n']).starts_with("尾"));
     }
 }
+
+
+
+
+
 
