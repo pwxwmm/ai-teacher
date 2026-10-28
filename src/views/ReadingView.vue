@@ -216,6 +216,7 @@
       :style="{ width: '560px', maxWidth: '92vw' }"
       :mask-closable="!askStreaming"
       :close-on-esc="!askStreaming"
+      @after-enter="forceReaderRepaint"
       @after-leave="resetAskModal"
     >
       <n-alert v-if="quoteWarn" type="warning" :bordered="false" class="quote-warn">
@@ -396,6 +397,8 @@ const selBtnEl = ref<HTMLElement | null>(null);
 const selShow = ref(false);
 const selPos = ref({ x: 0, y: 0 });
 const pendingQuote = ref("");
+// 划词时克隆保存的选区位置，问 AI 弹窗关闭后用它把选区恢复成"真选中"状态
+const pendingRange = ref<Range | null>(null);
 
 const askShow = ref(false);
 const askQuote = ref("");
@@ -443,6 +446,8 @@ function resetState(): void {
   askQuote.value = "";
   askQuestion.value = "";
   askRounds.value = [];
+  pendingQuote.value = "";
+  pendingRange.value = null;
 }
 
 // 路由 unitId 变化（章间翻页、从详情页跳入）→ 重置并整章重载
@@ -617,6 +622,7 @@ function onDocMouseup(e: MouseEvent): void {
   const text = sel.toString().trim();
   if (!text) return;
   pendingQuote.value = text;
+  pendingRange.value = sel.getRangeAt(0).cloneRange();
   const rect = sel.getRangeAt(0).getBoundingClientRect();
   selPos.value = {
     x: Math.max(8, Math.min(rect.left, window.innerWidth - 104)),
@@ -634,6 +640,16 @@ function hideSelButton(): void {
   selShow.value = false;
 }
 
+// WKWebView 偶发把选区变动丢在合成层缓存里不刷新（正文上残留空白高亮残影，或恢复选区不重绘），
+// 强制重建正文列的合成层。必须在选区变动落帧之后调用。
+function forceReaderRepaint(): void {
+  const wrap = unitWrap.value;
+  if (!wrap) return;
+  wrap.style.transform = "translateZ(0)";
+  void wrap.offsetHeight;
+  wrap.style.transform = "";
+}
+
 function openAskModal(): void {
   if (!pendingQuote.value) return;
   askQuote.value = pendingQuote.value;
@@ -642,13 +658,34 @@ function openAskModal(): void {
   askShow.value = true;
   selShow.value = false;
   window.getSelection()?.removeAllRanges();
+  // 清除选区和弹窗层叠变化会挤在同一个合成事务里，残影此刻就可能留下：
+  // 先在下一帧重绘一次，弹窗完全展开后（@after-enter）再重绘一次兜底
+  requestAnimationFrame(forceReaderRepaint);
 }
 
 function resetAskModal(): void {
   askQuote.value = "";
   askQuestion.value = "";
   askRounds.value = [];
-  selShow.value = false;
+  // 关掉弹窗不等于放弃选区：把划词时保存的 Range 恢复成真实选中，"问 AI"按钮也摆回原位，
+  // 想针对同一段再问不用重新划词；只有用户自己点正文空白处（onDocMousedown + 浏览器天然
+  // 坍缩选区）才真正清掉。
+  const range = pendingRange.value;
+  if (!range) return;
+  requestAnimationFrame(() => {
+    const sel = window.getSelection();
+    if (sel) {
+      sel.removeAllRanges();
+      try {
+        sel.addRange(range);
+        selShow.value = !sel.isCollapsed;
+      } catch {
+        // 正文已翻章/重建，旧 Range 失效，放弃恢复
+      }
+    }
+    // WKWebView 偶发把选区变动丢在合成层缓存里不刷新（残留空白高亮或恢复不重绘）
+    forceReaderRepaint();
+  });
 }
 
 async function askRound(q: string): Promise<void> {
