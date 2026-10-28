@@ -1,0 +1,23 @@
+#!/bin/bash
+# Minimal brew stub: macOS 27 上真 brew 不可用，仅用于让 tauri ios init 的依赖检查通过。
+case "$1" in
+  --version)
+    echo "Homebrew 4.4.0"
+    ;;
+  list)
+    shift
+    for a in "$@"; do
+      case "$a" in
+        -*) ;;
+        *) echo "$a 1.0.0" ;;
+      esac
+    done
+    ;;
+  --prefix)
+    echo /usr/local
+    ;;
+  install|reinstall|upgrade)
+    exit 0
+    ;;
+esac
+exit 0
