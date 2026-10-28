@@ -1,27 +1,71 @@
 <template>
   <n-message-provider>
     <n-layout has-sider style="height: 100vh">
-      <n-layout-sider bordered :width="180">
-        <div class="logo">AI 伴读</div>
-        <n-menu :options="menuOptions" :value="activeKey" @update:value="onSelect" />
-        <div v-if="showContinue" class="continue-wrap">
+      <n-layout-sider
+        v-if="!isMobile"
+        bordered
+        :width="180"
+        :collapsed-width="64"
+        :collapsed="isTablet"
+        class="app-sider"
+      >
+        <div class="logo">{{ isTablet ? "伴" : "AI 伴读" }}</div>
+        <n-menu
+          :options="menuOptions"
+          :value="activeKey"
+          :collapsed="isTablet"
+          :collapsed-width="64"
+          :collapsed-icon-size="24"
+          @update:value="onSelect"
+        />
+        <div v-if="showContinue && !isTablet" class="continue-wrap">
           <n-button block secondary type="primary" @click="goContinueReading">
             继续阅读
           </n-button>
         </div>
+        <div v-else-if="showContinue" class="continue-wrap tablet">
+          <n-button text @click="goContinueReading">
+            <n-icon :size="24"><ArrowRedoCircleOutline /></n-icon>
+          </n-button>
+        </div>
       </n-layout-sider>
-      <n-layout-content ref="mainRef" class="main">
+      <n-layout-content ref="mainRef" class="main" :class="{ mobile: isMobile }">
         <router-view />
       </n-layout-content>
+      <nav v-if="isMobile" class="tab-bar">
+        <button
+          v-for="item in menuOptions"
+          :key="item.key"
+          class="tab-item"
+          :class="{ active: activeKey === item.key }"
+          @click="onSelect(item.key as string)"
+        >
+          <span class="tab-icon">
+            <component :is="item.icon" />
+          </span>
+          <span class="tab-label">{{ item.label }}</span>
+        </button>
+        <button
+          v-if="showContinue"
+          class="tab-item continue"
+          @click="goContinueReading"
+        >
+          <span class="tab-icon">
+            <n-icon :size="22"><ArrowRedoCircleOutline /></n-icon>
+          </span>
+          <span class="tab-label">继续阅读</span>
+        </button>
+      </nav>
     </n-layout>
   </n-message-provider>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   BookmarkOutline,
+  ArrowRedoCircleOutline,
   BookOutline,
   CalendarOutline,
   SettingsOutline,
@@ -43,6 +87,24 @@ function icon(c: Component) {
 
 const route = useRoute();
 const router = useRouter();
+
+// 端设备自适应断点（CSS px）：
+// ≤820 手机/iPad mini 竖屏 → 侧边栏换底部 Tab 栏；821–1100 iPad 竖屏/窄窗口 → 图标侧栏
+const MOBILE_MAX = 820;
+const TABLET_MAX = 1100;
+
+const windowWidth = ref(window.innerWidth);
+const isMobile = computed(() => windowWidth.value <= MOBILE_MAX);
+const isTablet = computed(
+  () => windowWidth.value > MOBILE_MAX && windowWidth.value <= TABLET_MAX,
+);
+
+function onResize() {
+  windowWidth.value = window.innerWidth;
+}
+
+onMounted(() => window.addEventListener("resize", onResize));
+onUnmounted(() => window.removeEventListener("resize", onResize));
 
 const menuOptions = [
   { label: "今日学习", key: "/today", icon: icon(CalendarOutline) },
@@ -120,6 +182,7 @@ watch(
   padding: 18px 16px 10px;
   font-size: 18px;
   font-weight: 700;
+  text-align: center;
 }
 
 .continue-wrap {
@@ -129,6 +192,12 @@ watch(
 }
 
 /* 撑满侧栏右侧剩余宽度由 n-layout-content 提供（换成裸 div 会变成"内容多宽就多宽"，书架被压成单列） */
+
+.continue-wrap.tablet {
+  padding: 8px 4px 0;
+  text-align: center;
+}
+
 .main {
   padding: 20px 24px;
   overflow: auto;
@@ -187,5 +256,60 @@ watch(
     display: block;
     padding-bottom: 48px;
   }
+}
+
+.main.mobile {
+  padding: 12px;
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+}
+
+.tab-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  align-items: stretch;
+  background: #fff;
+  border-top: 1px solid #efeff5;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: none;
+  background: none;
+  color: rgba(0, 0, 0, 0.5);
+  font-size: 11px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.tab-item.active {
+  color: #18a058;
+}
+
+.tab-item.continue {
+  color: #2080f0;
+}
+
+.tab-icon {
+  display: inline-flex;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.tab-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 </style>
