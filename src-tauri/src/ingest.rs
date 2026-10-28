@@ -161,18 +161,264 @@ fn split_paragraphs(text: &str) -> Vec<String> {
 
 // ---------- PDF ----------
 
+/// 页眉页脚判定：同一行文本出现在超过该比例的页里即视为重复装饰。
+const RUNNING_HEADER_RATIO: f64 = 0.5;
+/// 认定为页眉页脚的行位置（从页首/页尾数起的前/后若干行）。
+const EDGE_LINES: usize = 3;
+/// 标题行最大长度（字符），超过视为正文。
+const MAX_HEADING_CHARS: usize = 40;
+
 fn parse_pdf(path: &Path) -> Result<Vec<Chapter>, String> {
-    let text = pdf_extract::extract_text(path).map_err(|e| format!("无法解析 PDF：{e}"))?;
-    // 换页符当作段落分隔
-    let text = text.replace('\u{c}', "\n\n");
-    let paragraphs = split_paragraphs(&text);
-    if paragraphs.is_empty() {
-        return Err("PDF 中没有可提取的文本内容".to_string());
+    let pages = extract_pdf_pages(path)?;
+    let pages = strip_running_headers(&pages);
+    let blocks = pages
+        .iter()
+        .flat_map(|page| pdf_page_paragraphs(page))
+        .collect::<Vec<_>>();
+    if blocks.is_empty() {
+        return Err("PDF 中没有可提取的文本内容（可能是扫描件或纯图片 PDF）".to_string());
     }
-    Ok(vec![Chapter {
-        title: "正文".to_string(),
-        paragraphs,
-    }])
+    let chapters = split_pdf_chapters(blocks);
+    if chapters.is_empty() {
+        return Err("PDF 中没有可提取的文本内容（可能是扫描件或纯图片 PDF）".to_string());
+    }
+    Ok(chapters)
+}
+
+/// 按页提取文本。pdf-extract 遇到非 Identity-H 编码的字体会 assert 崩溃，
+/// 且 panic 发生在库内部（整本一起解析），只能整本兜底成可读错误。
+fn extract_pdf_pages(path: &Path) -> Result<Vec<String>, String> {
+    // 静音这段时间的 panic 输出：库内部的 assert 对用户只是噪音，错误由下方统一提示。
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        pdf_extract::extract_text_by_pages(path)
+    }));
+    std::panic::set_hook(previous_hook);
+    match result {
+        Ok(Ok(pages)) => Ok(pages),
+        Ok(Err(e)) => Err(format!("无法解析 PDF：{e}")),
+        Err(_) => Err(
+            "无法解析 PDF：该文件使用了暂不支持的字体编码（常见于部分中文排版软件导出的 PDF）。\
+             可尝试用阅读器另存为 PDF 或先转成 EPUB/TXT 后再导入"
+                .to_string(),
+        ),
+    }
+}
+
+/// 去掉每页首尾重复出现的页眉页脚（书名、章节名、页码）。
+fn strip_running_headers(pages: &[String]) -> Vec<String> {
+    if pages.len() < 3 {
+        return pages.to_vec();
+    }
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for page in pages {
+        let lines = pdf_lines(page);
+        let mut seen: Vec<String> = Vec::new();
+        for line in lines
+            .iter()
+            .take(EDGE_LINES)
+            .chain(lines.iter().rev().take(EDGE_LINES))
+        {
+            let key = normalize_heading(line);
+            // 纯数字/过短的行不参与统计，避免把正文短句误判成页眉
+            if key.chars().count() >= 2 && !seen.contains(&key) {
+                seen.push(key.clone());
+                *counts.entry(key).or_insert(0) += 1;
+            }
+        }
+    }
+    let threshold = (pages.len() as f64 * RUNNING_HEADER_RATIO).ceil() as usize;
+    let repeated: Vec<String> = counts
+        .into_iter()
+        .filter(|(_, n)| *n >= threshold)
+        .map(|(k, _)| k)
+        .collect();
+    if repeated.is_empty() {
+        return pages.to_vec();
+    }
+    pages
+        .iter()
+        .map(|page| {
+            let lines = pdf_lines(page);
+            let total = lines.len();
+            lines
+                .into_iter()
+                .enumerate()
+                .filter(|(i, line)| {
+                    let at_edge = *i < EDGE_LINES || i + EDGE_LINES >= total;
+                    !(at_edge && repeated.contains(&normalize_heading(line)))
+                })
+                .map(|(_, line)| line)
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .collect()
+}
+
+fn pdf_lines(page: &str) -> Vec<String> {
+    page.lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// 标题比较用的归一化键：去空白、小写。
+fn normalize_heading(line: &str) -> String {
+    line.chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .to_lowercase()
+}
+
+/// 一页正文切段：接回排版换行、拼接连字符断词、归一化康熙部首，空行作为段落分隔。
+fn pdf_page_paragraphs(page: &str) -> Vec<String> {
+    let joined = join_wrapped_lines(page);
+    let text = clean_pdf_text(&joined);
+    text.split("\n\n")
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .collect()
+}
+
+/// 把排版换行接回完整段落：段落内换行直接删掉（中英文都适用，PDF 的换行不代表语义分段），
+/// 空行保留为段落分隔。
+fn join_wrapped_lines(page: &str) -> String {
+    let mut out = String::new();
+    let mut prev_end: Option<char> = None;
+    for raw in page.lines() {
+        let line = raw.trim();
+        if line.is_empty() {
+            if !out.ends_with("\n\n") && !out.is_empty() {
+                out.push_str("\n\n");
+            }
+            prev_end = None;
+            continue;
+        }
+        if let Some(last) = prev_end {
+            // 行尾是连字符：英文断词，直接拼接；否则按中英文分别处理
+            if last == '-' && line.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
+                out.pop();
+            } else if !needs_space(last, line.chars().next().unwrap_or(' ')) {
+                // 中文之间不补空格
+            } else {
+                out.push(' ');
+            }
+        }
+        out.push_str(line);
+        prev_end = line.chars().last();
+    }
+    out
+}
+
+fn needs_space(prev: char, next: char) -> bool {
+    prev.is_ascii_alphanumeric() && next.is_ascii_alphanumeric()
+}
+
+/// 归一化：康熙部首（U+2F00 起）→ 对应统一汉字，全角空格 → 半角，合并连续空白。
+/// 部分中文排版软件导出的 PDF 会把正文里的汉字映射到康熙部首区，不归一化会断句断词。
+fn clean_pdf_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut blank_run = 0usize;
+    for ch in text.chars() {
+        let mapped = match ch {
+            '\u{2f00}'..='\u{2fd5}' => kangxi_to_unified(ch).unwrap_or(ch),
+            '\u{3000}' => ' ',
+            c if c.is_whitespace() && c != '\n' => ' ',
+            c => c,
+        };
+        if mapped == '\n' {
+            blank_run += 1;
+            if blank_run <= 2 {
+                out.push('\n');
+            }
+        } else {
+            blank_run = 0;
+            out.push(mapped);
+        }
+    }
+    out
+}
+
+/// 康熙部首 U+2F00..U+2FD5 按码位顺序对应的统一汉字（214 个，与 NFKC 映射一致）。
+const KANGXI_RADICALS: &str = "一丨丶丿乙亅二亠人儿入八冂冖冫几凵刀力勹匕匚匸十卜卩厂厶又口囗土士夂夊夕大女子宀寸小尢尸屮山巛工己巾干幺广廴廾弋弓彐彡彳心戈戶手支攴文斗斤方无日曰月木欠止歹殳毋比毛氏气水火爪父爻爿片牙牛犬玄玉瓜瓦甘生用田疋疒癶白皮皿目矛矢石示禸禾穴立竹米糸缶网羊羽老而耒耳聿肉臣自至臼舌舛舟艮色艸虍虫血行衣襾見角言谷豆豕豸貝赤走足身車辛辰辵邑酉釆里金長門阜隶隹雨靑非面革韋韭音頁風飛食首香馬骨高髟鬥鬯鬲鬼魚鳥鹵鹿麥麻黃黍黑黹黽鼎鼓鼠鼻齊齒龍龜龠";
+
+fn kangxi_to_unified(ch: char) -> Option<char> {
+    let offset = (ch as u32 - 0x2F00) as usize;
+    KANGXI_RADICALS.chars().nth(offset)
+}
+
+/// 按标题切章：识别「第N章/节/部分」「Chapter N」「一、二、」式编号行；
+/// 找不到标题时整本作为一章（由 group_units_into_chapters 兜底拆段）。
+fn split_pdf_chapters(blocks: Vec<String>) -> Vec<Chapter> {
+    let mut chapters: Vec<Chapter> = Vec::new();
+    let mut title = "正文".to_string();
+    let mut paragraphs: Vec<String> = Vec::new();
+    for block in blocks {
+        if is_pdf_heading(&block) {
+            if !paragraphs.is_empty() {
+                chapters.push(Chapter {
+                    title: title.clone(),
+                    paragraphs: std::mem::take(&mut paragraphs),
+                });
+            }
+            title = block;
+        } else {
+            paragraphs.push(block);
+        }
+    }
+    if !paragraphs.is_empty() {
+        chapters.push(Chapter {
+            title,
+            paragraphs,
+        });
+    }
+    chapters
+}
+
+fn is_pdf_heading(block: &str) -> bool {
+    let t = block.trim();
+    let chars: Vec<char> = t.chars().collect();
+    if chars.is_empty() || chars.len() > MAX_HEADING_CHARS {
+        return false;
+    }
+    // 标题通常不带句末标点
+    if t.ends_with('。') || t.ends_with('，') || t.ends_with('；') || t.ends_with('.') {
+        return false;
+    }
+    let has_newline = t.contains('\n');
+    if has_newline {
+        return false;
+    }
+    let lower = t.to_lowercase();
+    if lower.starts_with("chapter ") || lower.starts_with("part ") {
+        return true;
+    }
+    if t.starts_with('第') {
+        let rest = &t['第'.len_utf8()..];
+        let end = rest.find(|c: char| !c.is_ascii_digit() && !"一二三四五六七八九十百零〇两".contains(c));
+        if let Some(end) = end {
+            let numeral = &rest[..end];
+            let tail = &rest[end..];
+            if !numeral.is_empty()
+                && ["章", "节", "部分", "篇", "讲"]
+                    .iter()
+                    .any(|unit| tail.starts_with(unit))
+            {
+                return true;
+            }
+        }
+    }
+    // 「一、xxx」式编号标题
+    if let Some(first) = chars.first() {
+        if "一二三四五六七八九十".contains(*first)
+            && chars.get(1) == Some(&'、')
+            && chars.len() >= 3
+        {
+            return true;
+        }
+    }
+    false
 }
 
 // ---------- EPUB ----------
@@ -1307,6 +1553,111 @@ mod tests {
     }
 
     #[test]
+    fn pdf_kangxi_radicals_normalized_to_unified() {
+        // 「用用一文」：这些字在部分中文 PDF 里被映射到康熙部首区
+        let raw = "\u{2F64}\u{2F64}\u{2F00}\u{2F42}";
+        assert_eq!(clean_pdf_text(raw), "用用一文");
+        // 214 个部首全部有映射，且首尾对齐
+        assert_eq!(kangxi_to_unified('\u{2F00}'), Some('一'));
+        assert_eq!(kangxi_to_unified('\u{2F64}'), Some('用'));
+        assert_eq!(kangxi_to_unified('\u{2FD5}'), Some('龠'));
+        assert_eq!(KANGXI_RADICALS.chars().count(), 214);
+    }
+
+    #[test]
+    fn pdf_soft_line_breaks_join_into_one_paragraph() {
+        let page = "这是一段被排版切断的中文\n接着下一行继续。\n\n新的段落在这里。";
+        let blocks = pdf_page_paragraphs(page);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0], "这是一段被排版切断的中文接着下一行继续。");
+        assert_eq!(blocks[1], "新的段落在这里。");
+    }
+
+    #[test]
+    fn pdf_hyphenated_wrap_joined() {
+        let page = "The extraor-\ndinary result";
+        assert_eq!(pdf_page_paragraphs(page), vec!["The extraordinary result"]);
+    }
+
+    #[test]
+    fn pdf_running_headers_removed() {
+        let page = |body: &str| format!("深入理解计算机系统\n{body}\n- 42 -");
+        let pages = vec![
+            page("正文一。"),
+            page("正文二。"),
+            page("正文三。"),
+            page("正文四。"),
+        ];
+        let stripped = strip_running_headers(&pages);
+        assert!(stripped.iter().all(|p| !p.contains("深入理解计算机系统")));
+        assert!(stripped.iter().all(|p| !p.contains("- 42 -")));
+        assert!(stripped[0].contains("正文一。"));
+    }
+
+    #[test]
+    fn pdf_short_documents_keep_their_lines() {
+        // 少于 3 页不做页眉剔除，避免误删
+        let pages = vec!["书名\n正文".to_string(), "书名\n正文二".to_string()];
+        let stripped = strip_running_headers(&pages);
+        assert_eq!(stripped, pages);
+    }
+
+    #[test]
+    fn pdf_chapters_split_on_chinese_headings() {
+        let blocks: Vec<String> = vec![
+            "第一章 绪论".to_string(),
+            "本章介绍基本概念。".to_string(),
+            "第二章 方法".to_string(),
+            "方法部分正文。".to_string(),
+            "一、实验设置".to_string(),
+            "实验内容。".to_string(),
+        ];
+        let chapters = split_pdf_chapters(blocks);
+        assert_eq!(chapters.len(), 3);
+        assert_eq!(chapters[0].title, "第一章 绪论");
+        assert_eq!(chapters[1].title, "第二章 方法");
+        assert_eq!(chapters[2].title, "一、实验设置");
+        assert_eq!(chapters[2].paragraphs, vec!["实验内容。"]);
+    }
+
+    #[test]
+    fn pdf_chapters_split_on_english_headings() {
+        let blocks: Vec<String> = vec![
+            "Chapter 1 Introduction".to_string(),
+            "Intro body.".to_string(),
+            "Chapter 2 Method".to_string(),
+            "Method body.".to_string(),
+        ];
+        let chapters = split_pdf_chapters(blocks);
+        assert_eq!(chapters.len(), 2);
+        assert_eq!(chapters[0].title, "Chapter 1 Introduction");
+        assert_eq!(chapters[1].title, "Chapter 2 Method");
+    }
+
+    #[test]
+    fn pdf_without_headings_stays_single_chapter() {
+        let blocks: Vec<String> = vec![
+            "这是一段普通正文，没有任何标题结构。".to_string(),
+            "第二段内容继续。".to_string(),
+        ];
+        let chapters = split_pdf_chapters(blocks);
+        assert_eq!(chapters.len(), 1);
+        assert_eq!(chapters[0].title, "正文");
+        assert_eq!(chapters[0].paragraphs.len(), 2);
+    }
+
+    #[test]
+    fn pdf_sentence_like_lines_are_not_headings() {
+        // 以「第」开头但不是章节编号（如「第一，我们需要……」）不应误判为标题
+        assert!(!is_pdf_heading("第一，我们需要重新思考这个问题。"));
+        assert!(!is_pdf_heading("第三方向。"));
+        assert!(!is_pdf_heading(&"很长的正文行".repeat(10)));
+        assert!(is_pdf_heading("第一章 绪论"));
+        assert!(is_pdf_heading("第三部分 实践"));
+        assert!(is_pdf_heading("Chapter 3"));
+    }
+
+    #[test]
     fn href_resolution() {
         assert_eq!(
             resolve_href("OEBPS", "text/a1.xhtml"),
@@ -1766,3 +2117,4 @@ mod tests {
         assert!(back.trim_start_matches(['…', '\n']).starts_with("尾"));
     }
 }
+
