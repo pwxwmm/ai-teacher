@@ -1462,6 +1462,17 @@ pub fn import_book(db: &Db, app_data_dir: &Path, path: &str) -> Result<BookSumma
         return Err("未能从该文件中解析出任何学习内容".to_string());
     }
 
+    // 书名+单元数双判定防重复导入：源文件落库后会被拷贝进 books/<id>/，
+    // 单凭 source_path 去重拦不住「同一本书换了路径再来一次」
+    if db
+        .list_books()
+        .map_err(|e| e.to_string())?
+        .iter()
+        .any(|b| b.title == title && b.total_units == units.len() as i64)
+    {
+        return Err("这本书已经导入过了".to_string());
+    }
+
     let added_at = chrono::Local::now().format("%Y-%m-%d").to_string();
     let book_id = db
         .insert_book(&title, &path, format, &added_at)
@@ -1471,6 +1482,16 @@ pub fn import_book(db: &Db, app_data_dir: &Path, path: &str) -> Result<BookSumma
         let _ = db.delete_book(book_id);
         let _ = std::fs::remove_dir_all(&book_dir);
         return Err(e);
+    }
+
+    // 源文件自包含：拷贝进 books/<id>/ 并把 source_path 指向副本。
+    // iOS 数据容器每次安装换 UUID（绝对路径随之失效）、Inbox/tmp 也会被系统清理，
+    // 不拷贝则重装后读时重解析源文件拿不到（章划分降级标题推导）
+    if let Some(name) = file_path.file_name() {
+        let copy_path = book_dir.join(name);
+        if std::fs::copy(file_path, &copy_path).is_ok() {
+            let _ = db.update_book_source_path(book_id, &copy_path.to_string_lossy());
+        }
     }
 
     Ok(BookSummary {

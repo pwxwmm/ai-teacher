@@ -298,6 +298,13 @@ h6 {
     background: transparent;
   }
 
+  /* 触摸端不显示任何滚动条（Apple Books 式沉浸；桌面式 10px 滚动条不带上手机） */
+  #app ::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
   /* 卡片/列表变玻璃：半透明白 + 模糊 + 高光内边 + 发丝描边 + 微投影（在淡渐变上要"读得出是卡"） */
   .card,
   .n-card,
