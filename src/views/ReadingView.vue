@@ -1277,7 +1277,10 @@ function renderMarkdown(src: string): string {
 
   .read-col {
     position: relative;
-    padding: 0 20px 24px;
+    /* 手机端正文解绑：不限宽不居中，全部可用宽度都给内容 */
+    max-width: none;
+    margin: 0;
+    padding: 0 16px 24px;
   }
 
   .reading-card {
