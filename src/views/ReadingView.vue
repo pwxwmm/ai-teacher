@@ -68,8 +68,16 @@
               </div>
             </div>
 
-            <!-- 阅读设置：Apple 图书风（主题 + 字号） -->
-            <div class="reading-settings">
+            <!-- 阅读设置：Apple 图书风（主题 + 字号）；手机默认收起，Aa 圆钮展开 -->
+            <button
+              class="aa-fab"
+              title="阅读设置"
+              aria-label="阅读设置"
+              @click="settingsOpen = !settingsOpen"
+            >
+              Aa
+            </button>
+            <div v-show="settingsOpen" class="reading-settings">
               <div class="theme-group" role="group" aria-label="主题切换">
                 <button
                   v-for="t in themes"
@@ -357,6 +365,8 @@ const themes: ThemeDef[] = [
 
 const theme = ref<string>("paper");
 const fontSize = ref<number>(16);
+// 阅读设置折叠：桌面常开；手机默认收起，Aa 圆钮展开（Apple Books aa 菜单）
+const settingsOpen = ref<boolean>(window.innerWidth > 820);
 const lineHeight = 1.75;
 
 function loadPrefs(): { theme?: string; fontSize?: number } {
@@ -1201,10 +1211,57 @@ function renderMarkdown(src: string): string {
   }
 }
 
-/* 手机阅读页收窄页头：Apple Books 的沉浸感——只留一行居中小标题，章导航隐去（翻页走两侧箭头/滑动） */
+/* Aa 圆钮：手机端阅读设置入口（Apple Books aa 菜单的触发片） */
+.aa-fab {
+  display: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 15;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0.5px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.6);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  backdrop-filter: blur(16px) saturate(170%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 2px 8px rgba(0, 0, 0, 0.08);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.12s ease-out;
+}
+
+.aa-fab:active {
+  transform: scale(0.94);
+}
+
+/* 手机阅读页沉浸：只留一行居中小标题，章导航隐去（翻页走两侧箭头/滑动），原文拆卡片框 */
 @media (max-width: 820px) {
+  .aa-fab {
+    display: block;
+  }
+
   .read-col {
+    position: relative;
     padding: 0 20px 24px;
+  }
+
+  .reading-card {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  .reading-card :deep(.n-card-header) {
+    display: none;
+  }
+
+  .reading-card :deep(.n-card__content) {
+    padding: 0 !important;
   }
 
   .read-col .page-header {
