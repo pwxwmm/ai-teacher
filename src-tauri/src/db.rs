@@ -216,6 +216,15 @@ impl Db {
         f(&conn)
     }
 
+    /// 数据库文件所在目录（= app_data_dir；resolve 数据路径用）。内存库返回 None。
+    pub fn data_dir(&self) -> Result<Option<std::path::PathBuf>, DbError> {
+        self.with_conn(|c| {
+            Ok(c
+                .path()
+                .and_then(|p| std::path::Path::new(p).parent().map(|d| d.to_path_buf())))
+        })
+    }
+
     // ---------- books ----------
 
     pub fn insert_book(
@@ -255,6 +264,17 @@ impl Db {
             )
             .optional()
             .map_err(Into::into)
+        })
+    }
+
+    /// 更新已入库图书的源文件路径（仅 UPDATE，不改表结构）。
+    pub fn update_book_source_path(&self, book_id: i64, source_path: &str) -> Result<(), DbError> {
+        self.with_conn(|c| {
+            c.execute(
+                "UPDATE books SET source_path = ?1 WHERE id = ?2",
+                params![source_path, book_id],
+            )?;
+            Ok(())
         })
     }
 
