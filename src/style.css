@@ -35,6 +35,22 @@ body {
   line-height: 1.4;
 }
 
+/* 手机：标题区竖排、字号收紧（App.vue 约定 ≤820px 为移动端断点） */
+@media (max-width: 820px) {
+  .page-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .page-title {
+    font-size: 19px;
+  }
+
+  .center-box {
+    padding: 48px 0;
+  }
+}
+
 .page-subtitle {
   margin-top: 4px;
   font-size: 13px;

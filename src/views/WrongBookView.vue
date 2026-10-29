@@ -317,6 +317,18 @@ watch(practiceShow, (show) => {
   width: 240px;
 }
 
+@media (max-width: 820px) {
+  .filter-select {
+    width: 100%;
+  }
+
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+}
+
 .row {
   display: flex;
   align-items: center;
