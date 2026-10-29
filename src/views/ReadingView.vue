@@ -174,7 +174,7 @@
           </div>
         </div>
 
-        <div class="ai-col">
+        <div v-if="!isNarrow" class="ai-col">
           <n-card title="AI 领读" class="section">
             <template #header-extra>
               <n-button
@@ -257,6 +257,101 @@
       </div>
     </template>
 
+    <!-- 手机端：正文纯净阅读——闯关/AI 收进底部学习助手抽屉（Glass action sheet） -->
+    <button v-if="isNarrow" class="ai-fab" title="学习助手" @click="assistantOpen = true">
+      AI
+    </button>
+    <n-drawer
+      v-if="isNarrow"
+      v-model:show="assistantOpen"
+      placement="bottom"
+      :height="drawerHeight"
+    >
+      <n-drawer-content title="学习助手" closable body-content-style="padding: 12px">
+        <div v-if="false" />
+        <div class="ai-col">
+          <n-card title="AI 领读" class="section">
+            <template #header-extra>
+              <n-button
+                v-if="(session || explainText) && !reading"
+                text
+                size="small"
+                @click="startReading"
+              >
+                重新领读
+              </n-button>
+            </template>
+            <div v-if="reading && !explainText" class="center-box small-pad">
+              <n-spin size="medium" />
+              <span class="muted">AI 伴读正在为你领读本章…</span>
+            </div>
+            <template v-else>
+              <n-alert v-if="readError" type="error" title="领读失败">
+                <div>{{ readError }}</div>
+                <n-button size="small" class="retry-btn" @click="startReading">重试</n-button>
+              </n-alert>
+              <template v-if="session || explainText">
+                <div v-if="session && session.knowledge_points.length > 0" class="kp-row">
+                  <n-tag
+                    v-for="kp in session.knowledge_points"
+                    :key="kp"
+                    type="info"
+                    size="small"
+                    round
+                    :bordered="false"
+                  >
+                    {{ kp }}
+                  </n-tag>
+                </div>
+                <div class="md" v-html="explanationHtml"></div>
+                <div v-if="reading" class="stream-hint muted small">AI 伴读正在领读本章…</div>
+              </template>
+              <div v-else-if="!readError" class="center-box small-pad">
+                <span class="muted">让 AI 伴读带你通读整章，梳理脉络、划出重点</span>
+                <n-button type="primary" @click="startReading">开始领读</n-button>
+              </div>
+            </template>
+          </n-card>
+
+          <n-card title="答疑" class="section">
+            <div class="ask-row">
+              <n-input
+                v-model:value="question"
+                type="textarea"
+                :autosize="{ minRows: 1, maxRows: 4 }"
+                placeholder="就本章内容向 AI 伴读提问…"
+                :disabled="asking"
+              />
+              <n-button
+                type="primary"
+                :loading="asking"
+                @mousedown="commitComposingInput"
+                @click="onAsk"
+              >
+                提问
+              </n-button>
+            </div>
+            <div v-if="history.length > 0" class="qa-list">
+              <div v-for="(qa, i) in history" :key="i" class="qa-item">
+                <div class="qa-q"><span class="qa-tag">问</span>{{ qa.q }}</div>
+                <div class="qa-a">
+                  <span class="qa-tag ai">答</span>
+                  <div class="qa-a-body">
+                    <div v-if="qa.html" class="md" v-html="qa.html"></div>
+                    <div v-else-if="!qa.error" class="qa-typing">
+                      <n-spin size="small" />
+                      <span class="muted small">AI 伴读正在思考…</span>
+                    </div>
+                    <div v-if="qa.error" class="qa-error small">提问失败：{{ qa.error }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </n-card>
+        </div>
+      </n-drawer-content>
+    </n-drawer>
+
     <div
       v-if="selShow"
       ref="selBtnEl"
@@ -318,6 +413,8 @@ import {
   NAlert,
   NButton,
   NCard,
+  NDrawer,
+  NDrawerContent,
   NEmpty,
   NInput,
   NModal,
@@ -434,6 +531,13 @@ const readError = ref<string | null>(null);
 const explainText = ref("");
 
 const question = ref("");
+// 手机端结构开关：正文纯净，闯关/AI 收抽屉（≥821px 时保持桌面双列结构）
+const isNarrow = ref(window.innerWidth <= 820);
+const assistantOpen = ref(false);
+function onNarrowResize(): void {
+  isNarrow.value = window.innerWidth <= 820;
+}
+const drawerHeight = computed(() => Math.round(window.innerHeight * 0.72));
 const asking = ref(false);
 const history = ref<QA[]>([]);
 
@@ -584,6 +688,7 @@ onMounted(() => {
   pageEl.value?.addEventListener("touchstart", onTouchStart, { passive: true });
   pageEl.value?.addEventListener("touchend", onTouchEnd, { passive: true });
   window.addEventListener("scroll", hideSelButton, true);
+  window.addEventListener("resize", onNarrowResize, { passive: true });
 });
 
 onBeforeUnmount(() => {
@@ -594,6 +699,7 @@ onBeforeUnmount(() => {
   pageEl.value?.removeEventListener("touchstart", onTouchStart);
   pageEl.value?.removeEventListener("touchend", onTouchEnd);
   window.removeEventListener("scroll", hideSelButton, true);
+  window.removeEventListener("resize", onNarrowResize);
 });
 
 async function scrollAfterLoad(): Promise<void> {
