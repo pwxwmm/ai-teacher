@@ -18,8 +18,24 @@ fn today() -> chrono::NaiveDate {
     chrono::Local::now().date_naive()
 }
 
-fn read_unit_content(unit: &UnitRow) -> Result<String, String> {
-    std::fs::read_to_string(&unit.content_path).map_err(|e| format!("无法读取单元内容：{e}"))
+/// iOS 每次安装都会换数据容器 UUID：库内绝对路径（content_path/source_path）随之失效。
+/// 不存在时以数据库所在目录（当前 app_data_dir）为根，取路径中 books/ 起的相对段重建。
+fn resolve_data_path(db: &Db, stored: &str) -> PathBuf {
+    let p = Path::new(stored);
+    if p.exists() {
+        return p.to_path_buf();
+    }
+    if let Some(idx) = stored.find("books/") {
+        if let Ok(Some(dir)) = db.data_dir() {
+            return dir.join(&stored[idx..]);
+        }
+    }
+    p.to_path_buf()
+}
+
+fn read_unit_content(db: &Db, unit: &UnitRow) -> Result<String, String> {
+    let p = resolve_data_path(db, &unit.content_path);
+    std::fs::read_to_string(&p).map_err(|e| format!("无法读取单元内容：{e}"))
 }
 
 fn question_to_public(q: &QuestionRow) -> QuizQuestion {
@@ -64,7 +80,7 @@ fn prev_context(db: &Db, unit: &UnitRow) -> Option<String> {
             return Some(format!("《{}》：{}", prev.title, summary));
         }
     }
-    let content = read_unit_content(&prev).ok()?;
+    let content = read_unit_content(db, &prev).ok()?;
     let excerpt: String = content.chars().take(300).collect();
     Some(format!("《{}》：{}", prev.title, excerpt))
 }
@@ -79,7 +95,7 @@ pub async fn start_reading_impl(
         .get_unit_with_book_title(unit_id)
         .map_err(|e| e.to_string())?
         .ok_or("未找到该单元")?;
-    let content = read_unit_content(&unit)?;
+    let content = read_unit_content(db, &unit)?;
     let prev_ctx = prev_context(db, &unit);
     let explanation =
         llm::explain_stream(settings, &content, prev_ctx.as_deref(), on_explain).await?;
@@ -106,7 +122,7 @@ pub async fn ask_impl(
         .get_unit(unit_id)
         .map_err(|e| e.to_string())?
         .ok_or("未找到该单元")?;
-    let content = read_unit_content(&unit)?;
+    let content = read_unit_content(db, &unit)?;
     let prev_ctx = prev_context(db, &unit);
     llm::ask_stream(settings, &content, prev_ctx.as_deref(), question, on_delta).await
 }
@@ -123,7 +139,7 @@ pub async fn ask_selection_impl(
         .get_unit(unit_id)
         .map_err(|e| e.to_string())?
         .ok_or("未找到该单元")?;
-    let content = read_unit_content(&unit)?;
+    let content = read_unit_content(db, &unit)?;
     let prev_ctx = prev_context(db, &unit);
     llm::ask_selection_stream(
         settings,
@@ -153,11 +169,11 @@ fn book_unit_group_titles(db: &Db, book_id: i64, rows: &[UnitRow]) -> Vec<String
         Ok(Some(p)) => p,
         _ => return fallback(),
     };
-    let source = Path::new(&source_path);
+    let source = resolve_data_path(db, &source_path);
     if !source.exists() {
         return fallback();
     }
-    let parsed = match ingest::parse_file_grouped(source) {
+    let parsed = match ingest::parse_file_grouped(&source) {
         Ok(p) => p,
         Err(_) => return fallback(),
     };
@@ -170,7 +186,7 @@ fn measure_book_units(db: &Db, book_id: i64, rows: &[UnitRow]) -> Vec<(i64, i64,
     rows.iter()
         .zip(titles)
         .map(|(r, group_title)| {
-            let n = read_unit_content(r).map(|c| c.chars().count()).unwrap_or(0);
+            let n = read_unit_content(db, r).map(|c| c.chars().count()).unwrap_or(0);
             (r.id, r.idx, group_title, n)
         })
         .collect()
@@ -204,13 +220,16 @@ fn resolve_chapter(db: &Db, unit_id: i64) -> Result<ChapterScope, String> {
     let mut units = Vec::with_capacity(group.unit_ids.len());
     for uid in &group.unit_ids {
         let row = rows.iter().find(|r| r.id == *uid).ok_or("章节数据异常")?;
-        let content = read_unit_content(row)?;
+        let content = read_unit_content(db, row)?;
         units.push((row.clone(), content));
     }
     // 图片目录：单元文件在 books/<id>/ 下，插图在 images/ 子目录（不存在即无插图）
     let images_dir = units
         .first()
-        .and_then(|(row, _)| Path::new(&row.content_path).parent().map(|p| p.to_path_buf()))
+        .and_then(|(row, _)| {
+            let p = resolve_data_path(db, &row.content_path);
+            p.parent().map(|d| d.to_path_buf())
+        })
         .map(|p| p.join("images"))
         .filter(|p| p.is_dir())
         .map(|p| p.to_string_lossy().to_string());
@@ -453,7 +472,7 @@ async fn generate_and_store_questions(
         .get_unit(unit_id)
         .map_err(|e| e.to_string())?
         .ok_or("未找到该单元")?;
-    let content = read_unit_content(&unit)?;
+    let content = read_unit_content(db, &unit)?;
     let knowledge_points = db
         .knowledge_points_of_unit(unit_id)
         .map_err(|e| e.to_string())?;
@@ -666,7 +685,7 @@ pub fn get_unit_content_impl(db: &Db, unit_id: i64) -> Result<UnitContent, Strin
         .get_unit_with_book_title(unit_id)
         .map_err(|e| e.to_string())?
         .ok_or("未找到该单元")?;
-    let content = read_unit_content(&row)?;
+    let content = read_unit_content(db, &row)?;
     Ok(UnitContent {
         unit: row_to_unit(&row),
         book_title,
@@ -1995,10 +2014,16 @@ mod tests {
         assert_eq!(ch.prev_chapter_unit_id, None);
         assert_eq!(ch.next_chapter_unit_id, Some(detail.units[3].id));
 
-        // 源文件被移走 → 回退为按标题推导（各节独立成章）
+        // 源文件被移走 → 导入时已把源文件拷进 books/<id>/，source_path 指向副本，
+        // 章划分不受影响（自包含，重装/换机后仍可精确切章）
         std::fs::remove_file(&path).unwrap();
         let detail2 = get_book_detail_impl(&db, summary.id).unwrap();
-        assert_eq!(detail2.chapters.len(), 4);
+        assert_eq!(detail2.chapters.len(), 2);
+        assert!(dir
+            .join("books")
+            .join(summary.id.to_string())
+            .join("nested.epub")
+            .exists());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

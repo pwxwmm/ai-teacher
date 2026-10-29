@@ -1,38 +1,56 @@
 <template>
-  <n-message-provider>
-    <n-layout has-sider style="height: 100vh">
+  <n-config-provider :theme-overrides="appleTheme">
+    <n-message-provider>
+      <n-layout has-sider style="height: 100vh">
       <n-layout-sider
-        v-if="!isMobile"
-        bordered
+        v-if="!isMobile && !isTablet"
         :width="180"
-        :collapsed-width="64"
-        :collapsed="isTablet"
         class="app-sider"
       >
-        <div class="logo">{{ isTablet ? "伴" : "AI 伴读" }}</div>
+        <div class="logo" data-tauri-drag-region>AI 伴读</div>
         <n-menu
           :options="menuOptions"
           :value="activeKey"
-          :collapsed="isTablet"
-          :collapsed-width="64"
-          :collapsed-icon-size="24"
           @update:value="onSelect"
         />
-        <div v-if="showContinue && !isTablet" class="continue-wrap">
+        <div v-if="showContinue" class="continue-wrap">
           <n-button block secondary type="primary" @click="goContinueReading">
             继续阅读
           </n-button>
         </div>
-        <div v-else-if="showContinue" class="continue-wrap tablet">
-          <n-button text @click="goContinueReading">
-            <n-icon :size="24"><ArrowRedoCircleOutline /></n-icon>
-          </n-button>
-        </div>
       </n-layout-sider>
-      <n-layout-content ref="mainRef" class="main" :class="{ mobile: isMobile }">
+      <!-- 平板区间：自绘 64px 图标栏 -->
+      <aside v-else-if="isTablet" class="tablet-rail">
+        <div class="rail-logo" data-tauri-drag-region>伴</div>
+        <button
+          v-for="item in menuOptions"
+          :key="item.key"
+          class="rail-item"
+          :class="{ active: activeKey === item.key }"
+          @click="onSelect(item.key as string)"
+        >
+          <span class="rail-icon">
+            <component :is="item.icon" />
+          </span>
+        </button>
+        <button
+          v-if="showContinue"
+          class="rail-item continue"
+          @click="goContinueReading"
+        >
+          <span class="rail-icon">
+            <n-icon :size="22"><ArrowRedoCircleOutline /></n-icon>
+          </span>
+        </button>
+      </aside>
+      <n-layout-content
+        ref="mainRef"
+        class="main"
+        :class="{ mobile: isMobile, reading: isReadingRoute }"
+      >
         <router-view />
       </n-layout-content>
-      <nav v-if="isMobile" class="tab-bar">
+      <nav v-if="isMobile && !isReadingRoute" class="tab-bar">
         <button
           v-for="item in menuOptions"
           :key="item.key"
@@ -56,8 +74,9 @@
           <span class="tab-label">继续阅读</span>
         </button>
       </nav>
-    </n-layout>
-  </n-message-provider>
+      </n-layout>
+    </n-message-provider>
+  </n-config-provider>
 </template>
 
 <script setup lang="ts">
@@ -72,6 +91,7 @@ import {
 } from "@vicons/ionicons5";
 import {
   NButton,
+  NConfigProvider,
   NIcon,
   NLayout,
   NLayoutContent,
@@ -80,6 +100,7 @@ import {
   NMessageProvider,
 } from "naive-ui";
 import { h, type Component } from "vue";
+import { appleTheme } from "./theme";
 
 function icon(c: Component) {
   return () => h(NIcon, null, { default: () => h(c) });
@@ -112,6 +133,8 @@ const menuOptions = [
   { label: "错题本", key: "/wrong", icon: icon(BookmarkOutline) },
   { label: "设置", key: "/settings", icon: icon(SettingsOutline) },
 ];
+
+const isReadingRoute = computed(() => route.path.startsWith("/reading/"));
 
 const activeKey = computed(() => {
   if (
@@ -178,28 +201,210 @@ watch(
 </script>
 
 <style scoped>
+/* ---------- 桌面侧栏（Apple 总支栏体系） ---------- */
+
+.app-sider {
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.app-sider :deep(.n-layout-sider__content) {
+  background: transparent;
+}
+
+.app-sider :deep(.n-menu) {
+  background: transparent;
+  padding: 12px;
+}
+
+/* 菜单项：Apple Music 风——选中 = 纯白 pill + 轻微抬起压力*/
+.app-sider :deep(.n-menu-item) {
+  --n-item-color-hover: rgba(0, 0, 0, 0.045);
+  --n-item-color-active: rgba(0, 0, 0, 0.045);
+  --n-item-color-active-hover: rgba(0, 0, 0, 0.06);
+  --n-item-icon-size: 18px;
+  border-radius: 7px;
+}
+
+.app-sider :deep(.n-menu-item-content) {
+  border-radius: 7px;
+}
+
+.app-sider :deep(.n-menu-item.n-menu-item--selected .n-menu-item-content) {
+  background: #ffffff;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.07),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+  font-weight: 600;
+}
+
+.app-sider
+  :deep(.n-menu-item.n-menu-item--selected
+    .n-menu-item-content__icon) {
+  color: var(--color-accent);
+}
+
+/* 左上角 logo 区充当窗口拖动区（Overlay 标题栏），红绿灯叠在上层 */
 .logo {
-  padding: 18px 16px 10px;
-  font-size: 18px;
-  font-weight: 700;
-  text-align: center;
+  padding: 26px 14px 10px 76px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
 }
 
 .continue-wrap {
   padding: 12px 12px 0;
-  border-top: 1px solid #efeff5;
+  border-top: 1px solid var(--border-subtle);
   margin-top: 8px;
 }
 
-/* 撑满侧栏右侧剩余宽度由 n-layout-content 提供（换成裸 div 会变成"内容多宽就多宽"，书架被压成单列） */
-.continue-wrap.tablet {
-  padding: 8px 4px 0;
-  text-align: center;
+/* ---------- 平板区间 64px 图标栏 ---------- */
+
+.tablet-rail {
+  width: 64px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 26px 8px 12px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-subtle);
 }
 
+.rail-logo {
+  padding: 0 0 14px;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.rail-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+  width: 100%;
+}
+
+.rail-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.rail-item.active {
+  background: rgba(0, 0, 0, 0.07);
+  color: var(--color-accent);
+}
+
+.rail-item.continue {
+  color: var(--color-accent-info);
+  margin-top: auto;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+}
+
+.rail-icon {
+  display: inline-flex;
+  font-size: 21px;
+  line-height: 1;
+}
+
+/* ---------- 主内容区 ---------- */
+
 .main {
-  padding: 20px 24px;
+  padding: 24px 28px;
   overflow: auto;
+  background: var(--bg-content);
+}
+
+.main.mobile {
+  padding: 14px 14px;
+  padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+}
+
+/* 阅读页全屏：Tab 栏收起后不再预留其占位 */
+.main.mobile.reading {
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ---------- 手机端 Tab 栏 ---------- */
+
+.tab-bar {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 100;
+  display: flex;
+  align-items: stretch;
+  border-radius: 26px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.62);
+  -webkit-backdrop-filter: blur(34px) saturate(190%);
+  backdrop-filter: blur(34px) saturate(190%);
+  border: 0.5px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.03),
+    0 10px 32px rgba(15, 35, 60, 0.16);
+}
+
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 9px 4px 7px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  min-width: 0;
+  /* Apple 规范：可点触控区 ≥44pt */
+  min-height: 44px;
+  transition: color 0.12s ease;
+}
+
+.tab-item.active {
+  color: var(--color-accent);
+  /* iOS 26 选中项：小型玻璃透镜（高光内边 + 微投影） */
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 18px;
+  margin: 4px;
+  padding: 5px 0 3px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 1px 6px rgba(0, 0, 0, 0.06);
+}
+
+.tab-item.continue {
+  color: var(--color-accent-info);
+}
+
+.tab-icon {
+  display: inline-flex;
+  /* SF Symbols Tab 栏图标的常见光学尺寸 */
+  font-size: 24px;
+  line-height: 1;
+}
+
+.tab-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  font-weight: 500;
 }
 
 /* 阅读页：外层不再整页滚动，正文列与领读列各在自己内部滚（各一条滚动条）。
@@ -255,60 +460,5 @@ watch(
     display: block;
     padding-bottom: 48px;
   }
-}
-
-.main.mobile {
-  padding: 12px;
-  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
-}
-
-.tab-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 100;
-  display: flex;
-  align-items: stretch;
-  background: #fff;
-  border-top: 1px solid #efeff5;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-
-.tab-item {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: 8px 4px;
-  border: none;
-  background: none;
-  color: rgba(0, 0, 0, 0.5);
-  font-size: 11px;
-  cursor: pointer;
-  min-width: 0;
-}
-
-.tab-item.active {
-  color: #18a058;
-}
-
-.tab-item.continue {
-  color: #2080f0;
-}
-
-.tab-icon {
-  display: inline-flex;
-  font-size: 22px;
-  line-height: 1;
-}
-
-.tab-label {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
 }
 </style>

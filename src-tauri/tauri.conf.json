@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ai-teacher",
+  "productName": "AI 伴读",
   "version": "0.1.0",
   "identifier": "com.example.aiteacher",
   "build": {
@@ -15,7 +15,9 @@
         "title": "AI 伴读",
         "width": 1100,
         "height": 720,
-        "label": "main"
+        "label": "main",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
@@ -29,6 +31,11 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "dmg"],
+    "category": "public.app-category.education",
+    "copyright": "Copyright © 2026 libolun & weimengmeng. All rights reserved.",
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    },
     "windows": {
       "nsis": {
         "languages": ["SimpChinese"]
