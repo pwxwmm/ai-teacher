@@ -1412,8 +1412,21 @@ pub fn cap_llm_input(text: &str, max_chars: usize) -> String {
 
 // ---------- 导入 ----------
 
+/// iOS/macOS 系统文件选择器可能回传 `file:///private/…` 形式的 URL（带协议头、
+/// CJK 等非 ASCII 按 %XX 编码），直接当文件系统路径会判为「文件不存在」。
+/// 统一规范化：剥 `file:` 协议头并做百分号解码。普通路径原样返回。
+fn normalize_import_path(path: &str) -> String {
+    let stripped = path
+        .strip_prefix("file://")
+        .or_else(|| path.strip_prefix("file:"))
+        .unwrap_or(path)
+        .to_string();
+    percent_decode(&stripped)
+}
+
 pub fn import_book(db: &Db, app_data_dir: &Path, path: &str) -> Result<BookSummary, String> {
-    let file_path = Path::new(path);
+    let path = normalize_import_path(path);
+    let file_path = Path::new(&path);
     if !file_path.exists() {
         return Err(format!("文件不存在：{path}"));
     }
@@ -1430,7 +1443,7 @@ pub fn import_book(db: &Db, app_data_dir: &Path, path: &str) -> Result<BookSumma
         _ => return Err("暂不支持该文件格式，仅支持 md / txt / epub / pdf".to_string()),
     };
     if db
-        .find_book_by_source_path(path)
+        .find_book_by_source_path(&path)
         .map_err(|e| e.to_string())?
         .is_some()
     {
@@ -1451,7 +1464,7 @@ pub fn import_book(db: &Db, app_data_dir: &Path, path: &str) -> Result<BookSumma
 
     let added_at = chrono::Local::now().format("%Y-%m-%d").to_string();
     let book_id = db
-        .insert_book(&title, path, format, &added_at)
+        .insert_book(&title, &path, format, &added_at)
         .map_err(|e| e.to_string())?;
     let book_dir = app_data_dir.join("books").join(book_id.to_string());
     if let Err(e) = persist_units(db, book_id, &book_dir, &units, &parsed.images) {
@@ -1508,6 +1521,24 @@ mod tests {
 
     fn s(n: usize) -> String {
         "字".repeat(n)
+    }
+
+    #[test]
+    fn normalize_import_path_handles_file_urls() {
+        // 普通路径原样返回
+        assert_eq!(normalize_import_path("/tmp/书.md"), "/tmp/书.md");
+        // file:// 协议头剥除
+        assert_eq!(normalize_import_path("file:///tmp/a.txt"), "/tmp/a.txt");
+        assert_eq!(normalize_import_path("file:/tmp/a.txt"), "/tmp/a.txt");
+        // iOS 选择器回传：协议头 + CJK 百分号编码
+        assert_eq!(
+            normalize_import_path(
+                "file:///private/var/mobile/Containers/Shared/AppGroup/Inbox/%E5%A4%A7%E6%A8%A1%E5%9E%8B.pdf"
+            ),
+            "/private/var/mobile/Containers/Shared/AppGroup/Inbox/大模型.pdf"
+        );
+        // 非法百分号序列原样保留
+        assert_eq!(normalize_import_path("file:///tmp/a%zz.md"), "/tmp/a%zz.md");
     }
 
     fn content_len(unit: &str) -> usize {
