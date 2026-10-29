@@ -1201,24 +1201,37 @@ function renderMarkdown(src: string): string {
   }
 }
 
-/* 手机阅读页收窄页头：Apple Books 的沉浸感——大标题变单行小标题、副标题隐去 */
+/* 手机阅读页收窄页头：Apple Books 的沉浸感——只留一行居中小标题，章导航隐去（翻页走两侧箭头/滑动） */
 @media (max-width: 820px) {
+  .read-col {
+    padding: 0 20px 24px;
+  }
+
   .read-col .page-header {
     flex-direction: row;
-    align-items: center;
-    margin-bottom: 10px;
+    justify-content: center;
+    margin-bottom: 4px;
+  }
+
+  .read-col .page-header > div:first-child {
+    text-align: center;
   }
 
   .read-col .page-title {
-    font-size: 17px;
+    font-size: 13px;
+    font-weight: 500;
   }
 
   .read-col .page-subtitle {
     display: none;
   }
 
+  .read-col .chapter-nav {
+    display: none;
+  }
+
   .reading-settings {
-    margin-bottom: 10px;
+    margin-bottom: 8px;
   }
 }
 
