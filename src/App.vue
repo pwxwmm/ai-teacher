@@ -230,7 +230,7 @@ watch(
   border-radius: 7px;
 }
 
-.app-sider :deep(.n-menu-item.n-menu-item--selected .n-menu-item-content) {
+.app-sider :deep(.n-menu-item-content--selected) {
   background: #ffffff;
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.07),
@@ -238,9 +238,7 @@ watch(
   font-weight: 600;
 }
 
-.app-sider
-  :deep(.n-menu-item.n-menu-item--selected
-    .n-menu-item-content__icon) {
+.app-sider :deep(.n-menu-item-content--selected .n-menu-item-content__icon) {
   color: var(--color-accent);
 }
 

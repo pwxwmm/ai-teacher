@@ -134,9 +134,6 @@ export const appleTheme: GlobalThemeOverrides = {
 
   // —— 菜单：选中态用更实的激活色
   Menu: {
-    itemIconSizeActive: "6",
-    itemIconSize: "20",
-    itemIconSizeCollapsed: "22",
     itemHeight: "40px",
     dividerColor: "rgba(0, 0, 0, 0.09)",
     // 侧栏在白底下：激活项为深一点的「选中感」（Apple Music 浅色模式同款思路）

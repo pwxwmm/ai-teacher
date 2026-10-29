@@ -1165,6 +1165,11 @@ function renderMarkdown(src: string): string {
   transition: background-color 0.2s ease;
 }
 
+/* 暗色主题下 n-card 标题仍用默认黑字——改成跟随阅读主题的标题色 */
+.reading-card :deep(.n-card-header__main) {
+  color: var(--reading-heading);
+}
+
 .reading-card :deep(.n-card__content) {
   background-color: inherit;
 }
