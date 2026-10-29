@@ -268,7 +268,6 @@
       :height="drawerHeight"
     >
       <n-drawer-content title="学习助手" closable body-content-style="padding: 12px">
-        <div v-if="false" />
         <div class="ai-col">
           <n-card title="AI 领读" class="section">
             <template #header-extra>
