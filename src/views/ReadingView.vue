@@ -1170,7 +1170,7 @@ function renderMarkdown(src: string): string {
 
 .side-arrow:hover,
 .side-arrow:focus-visible {
-  color: #18a058;
+  color: var(--color-accent);
   background: #fff;
 }
 
@@ -1581,7 +1581,7 @@ function renderMarkdown(src: string): string {
 
 .qa-tag.ai {
   background: #e0f2e9;
-  color: #18a058;
+  color: var(--color-accent);
 }
 
 .footer-bar {
@@ -1757,7 +1757,7 @@ function renderMarkdown(src: string): string {
 }
 
 .md :deep(a) {
-  color: #18a058;
+  color: var(--color-accent);
   text-decoration: none;
 }
 

@@ -39,9 +39,9 @@
   --space-2xl: 32px;
 
   /* 强调色（保留现有 Naive UI 的绿色仍是正确的，做了一点提亮） */
-  --color-accent: #18a058;
-  --color-accent-info: #2080f0;
-  --color-focus-ring: rgba(24, 160, 88, 0.25);
+  --color-accent: #007AFF;
+  --color-accent-info: #0A84FF;
+  --color-focus-ring: rgba(0, 122, 255, 0.25);
 
   /* 阴影：只做必要的悬浮（浮层、下拉、 Dialog 这类），不做卡片级阴影 */
   --shadow-float: 0 4px 24px rgba(0, 0, 0, 0.12);
@@ -71,8 +71,8 @@ body {
   color: var(--text-primary);
   /* 极淡冷调渐变：肉眼近乎平色，但给玻璃留出可透的层次 */
   background:
-    radial-gradient(140% 60% at 8% -10%, rgba(32, 128, 240, 0.05), transparent 60%),
-    radial-gradient(120% 55% at 94% 0%, rgba(24, 160, 88, 0.04), transparent 55%),
+    radial-gradient(140% 60% at 8% -10%, rgba(10, 132, 255, 0.05), transparent 60%),
+    radial-gradient(120% 55% at 94% 0%, rgba(0, 122, 255, 0.045), transparent 55%),
     linear-gradient(180deg, #f4f5f8 0%, var(--bg-window) 40%, #eceef3 100%);
 }
 
@@ -132,7 +132,7 @@ h6 {
 
 /* 选区（macOS 克制感：选区颜色与平台一致） */
 ::selection {
-  background: rgba(24, 160, 88, 0.22);
+  background: rgba(0, 122, 255, 0.2);
 }
 
 /* 焦点环（可访问性，对键盘用户友好） */
@@ -222,7 +222,7 @@ h6 {
 
 /* tinted 胶囊行动按钮：主色淡底 + 主色文字（iOS tinted button），替代描边小白块 */
 .btn-tinted.n-button:not(.n-button--disabled) {
-  background: rgba(24, 160, 88, 0.13) !important;
+  background: rgba(0, 122, 255, 0.12) !important;
   color: var(--color-accent) !important;
   border: none !important;
   border-radius: 999px !important;
@@ -233,7 +233,7 @@ h6 {
 }
 
 .btn-tinted.n-button:not(.n-button--disabled):hover {
-  background: rgba(24, 160, 88, 0.2) !important;
+  background: rgba(0, 122, 255, 0.18) !important;
 }
 
 /* 圆形图标按钮：页面头部轻量操作（iOS 导航图标片） */
@@ -303,8 +303,8 @@ h6 {
   /* 玻璃底色：冷调细微渐变 + 两团极淡色晕（强调绿/冰蓝），玻璃背后必须有"东西"可透 */
   body {
     background:
-      radial-gradient(120% 55% at 12% -8%, rgba(24, 160, 88, 0.16), transparent 60%),
-      radial-gradient(95% 50% at 88% 4%, rgba(32, 128, 240, 0.17), transparent 65%),
+      radial-gradient(120% 55% at 12% -8%, rgba(0, 122, 255, 0.15), transparent 60%),
+      radial-gradient(95% 50% at 88% 4%, rgba(10, 132, 255, 0.16), transparent 65%),
       linear-gradient(180deg, #f5f7fc 0%, #e8edf5 48%, #f2f5fa 100%);
     font-size: 15px;
   }
