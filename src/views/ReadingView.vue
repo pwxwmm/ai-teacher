@@ -15,6 +15,21 @@
     <template v-else-if="chapter">
       <div class="reading-main">
         <div ref="mainColEl" class="main-col">
+          <!-- 手机端：点屏幕左右边翻页（Apple Books 边击翻页；自身不可见） -->
+          <div
+            v-if="chapter.prev_chapter_unit_id"
+            class="page-tap-zone left"
+            role="button"
+            aria-label="上一章"
+            @click="goChapter(chapter.prev_chapter_unit_id)"
+          />
+          <div
+            v-if="chapter.next_chapter_unit_id"
+            class="page-tap-zone right"
+            role="button"
+            aria-label="下一章"
+            @click="goChapter(chapter.next_chapter_unit_id)"
+          />
           <!-- 翻章箭头：贴正文列左右外缘、钉在视口中线，左右位置由 colRect 实测写入 -->
           <div
             v-if="chapter.prev_chapter_unit_id"
@@ -1200,15 +1215,30 @@ function renderMarkdown(src: string): string {
 
   .side-arrow {
     position: absolute;
+    display: none; /* 手机端隐藏悬浮翻页钮，改点按屏幕左右边翻页 */
   }
 
-  .side-arrow.left {
+  .page-tap-zone {
+    display: block;
+  }
+
+  .page-tap-zone.left {
     left: 0;
   }
 
-  .side-arrow.right {
+  .page-tap-zone.right {
     right: 0;
   }
+}
+
+.page-tap-zone {
+  display: none;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 62px;
+  z-index: 10;
+  cursor: pointer;
 }
 
 /* Aa 圆钮：手机端阅读设置入口（Apple Books aa 菜单的触发片） */
