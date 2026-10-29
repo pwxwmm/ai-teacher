@@ -987,6 +987,19 @@ function renderMarkdown(src: string): string {
 }
 
 /* 窄屏三列放不下：退回单列整页滚动，箭头改为相对页面定位（随内容滚动） */
+.content-img {
+  display: block;
+  max-width: 100%;
+  margin: 14px auto;
+  border-radius: 6px;
+}
+
+@media (max-width: 1100px) {
+  .ai-col {
+    width: 320px;
+  }
+}
+
 @media (max-width: 900px) {
   .reading-main {
     display: block;
