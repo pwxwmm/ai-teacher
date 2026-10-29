@@ -43,10 +43,14 @@
           </span>
         </button>
       </aside>
-      <n-layout-content ref="mainRef" class="main" :class="{ mobile: isMobile }">
+      <n-layout-content
+        ref="mainRef"
+        class="main"
+        :class="{ mobile: isMobile, reading: isReadingRoute }"
+      >
         <router-view />
       </n-layout-content>
-      <nav v-if="isMobile" class="tab-bar">
+      <nav v-if="isMobile && !isReadingRoute" class="tab-bar">
         <button
           v-for="item in menuOptions"
           :key="item.key"
@@ -129,6 +133,8 @@ const menuOptions = [
   { label: "错题本", key: "/wrong", icon: icon(BookmarkOutline) },
   { label: "设置", key: "/settings", icon: icon(SettingsOutline) },
 ];
+
+const isReadingRoute = computed(() => route.path.startsWith("/reading/"));
 
 const activeKey = computed(() => {
   if (
@@ -322,6 +328,11 @@ watch(
 .main.mobile {
   padding: 14px 14px;
   padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+}
+
+/* 阅读页全屏：Tab 栏收起后不再预留其占位 */
+.main.mobile.reading {
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
 }
 
 /* ---------- 手机端 Tab 栏 ---------- */
