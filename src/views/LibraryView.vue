@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">书架</h2>
-        <div class="page-subtitle">点击书籍卡片，查看单元列表与学习进度</div>
+        <div class="page-subtitle">点击书籍封面，查看单元列表与学习进度</div>
       </div>
       <n-button type="primary" :loading="importing" @click="onImport">导入图书</n-button>
     </div>
@@ -19,7 +19,7 @@
 
     <n-empty v-else-if="loadError && store.books.length === 0" description="加载书架失败">
       <div class="muted small empty-extra">{{ loadError }}</div>
-      <n-button @click="refresh(true)">重试</n-button>
+      <n-button class="btn-tinted" @click="refresh(true)">重试</n-button>
     </n-empty>
 
     <n-empty v-else-if="store.books.length === 0" description="还没有导入图书，点击右上角「导入图书」">
@@ -28,38 +28,27 @@
     </n-empty>
 
     <div v-else class="book-grid">
-      <n-card
+      <div
         v-for="book in store.books"
         :key="book.id"
-        class="book-card"
-        hoverable
+        class="book-tile"
         @click="openBook(book)"
       >
-        <div class="book-top">
-          <span class="book-title">{{ book.title }}</span>
-          <n-button
-            class="del-btn"
-            size="tiny"
-            quaternary
-            type="error"
-            @click.stop="askRemove(book)"
-          >
-            删除
+        <div class="cover" :style="coverStyle(book.title)">
+          <span class="cover-title">{{ book.title }}</span>
+          <span class="cover-format">{{ book.format.toUpperCase() }}</span>
+          <n-button class="cover-close" quaternary title="删除" @click.stop="askRemove(book)">
+            <n-icon :size="13"><Close /></n-icon>
           </n-button>
         </div>
-        <div class="book-meta">
-          <n-tag size="small" :bordered="false">{{ book.format.toUpperCase() }}</n-tag>
-          <span class="muted small">导入于 {{ fmtDate(book.added_at) }}</span>
+        <div class="tile-progress">
+          <div
+            class="tile-progress-fill"
+            :style="{ width: `${percent(book.done_units, book.total_units)}%` }"
+          />
         </div>
-        <n-progress
-          type="line"
-          :percentage="percent(book.done_units, book.total_units)"
-          :show-indicator="false"
-          :height="8"
-          :border-radius="4"
-        />
-        <div class="muted small book-count">{{ book.done_units }}/{{ book.total_units }} 单元已学</div>
-      </n-card>
+        <div class="muted small tile-count">{{ book.done_units }}/{{ book.total_units }} 单元已学</div>
+      </div>
     </div>
 
     <n-modal v-model:show="confirmShow" :mask-closable="!removing">
@@ -83,18 +72,18 @@
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { open } from "@tauri-apps/plugin-dialog";
+import { Close } from "@vicons/ionicons5";
 import {
   NButton,
   NCard,
   NEmpty,
+  NIcon,
   NModal,
-  NProgress,
   NSpin,
-  NTag,
   useMessage,
 } from "naive-ui";
 import { api, type BookSummary } from "../api";
-import { errText, fmtDate, percent } from "../utils";
+import { errText, percent } from "../utils";
 import { useLibraryStore } from "../stores/library";
 
 const message = useMessage();
@@ -106,6 +95,28 @@ const confirmShow = ref(false);
 const pending = ref<BookSummary | null>(null);
 const removing = ref(false);
 const loadError = ref<string | null>(null);
+
+/* 苹果图书风封面：没有封面图的书，按书名定色生成"大字封面"。
+   对同一书名色彩恒定（按标题哈希选一组相邻深化色）。 */
+const COVER_PALETTES: [string, string][] = [
+  ["#6f94bd", "#54719e"],
+  ["#a9776d", "#8a5c52"],
+  ["#6f9461", "#567c49"],
+  ["#a3856d", "#856f5a"],
+  ["#7c7db3", "#60619e"],
+  ["#b0867c", "#916a5f"],
+  ["#5f9ea0", "#4b8385"],
+  ["#a97d95", "#88627a"],
+];
+
+function coverStyle(title: string): Record<string, string> {
+  let h = 0;
+  for (const ch of title) {
+    h = (h * 31 + (ch.codePointAt(0) ?? 0)) >>> 0;
+  }
+  const [a, b] = COVER_PALETTES[h % COVER_PALETTES.length];
+  return { backgroundImage: `linear-gradient(150deg, ${a}, ${b})` };
+}
 
 async function refresh(force = false): Promise<void> {
   try {
@@ -175,50 +186,105 @@ async function doRemove(): Promise<void> {
 <style scoped>
 .book-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 20px 14px;
 }
 
-.book-card {
+@media (min-width: 821px) {
+  .book-grid {
+    grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
+    gap: 24px 18px;
+  }
+}
+
+.book-tile {
   cursor: pointer;
 }
 
-.book-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+/* 封面：2:3 书型比例 + 书脊 + 微投影，按压微缩（iOS 手感） */
+.cover {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.18),
+    0 6px 18px rgba(15, 35, 60, 0.14);
+  transition: transform 0.12s ease-out;
 }
 
-.book-title {
-  flex: 1;
-  min-width: 0;
+.book-tile:active .cover {
+  transform: scale(0.97);
+}
+
+.cover::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 12px;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.24),
+    rgba(255, 255, 255, 0.1) 65%,
+    rgba(255, 255, 255, 0.3) 92%,
+    rgba(0, 0, 0, 0.08)
+  );
+}
+
+.cover-title {
+  position: absolute;
+  left: 24px;
+  right: 12px;
+  top: 14px;
+  color: rgba(255, 255, 255, 0.95);
   font-size: 15px;
   font-weight: 600;
+  line-height: 1.45;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.del-btn {
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.15s ease;
+.cover-format {
+  position: absolute;
+  left: 24px;
+  bottom: 12px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.72);
 }
 
-.book-card:hover .del-btn {
-  opacity: 1;
+.cover-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.24) !important;
+  color: rgba(255, 255, 255, 0.94);
 }
 
-.book-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 10px 0 14px;
+.tile-progress {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.08);
+  margin: 12px 2px 5px;
+  overflow: hidden;
 }
 
-.book-count {
-  margin-top: 6px;
+.tile-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-accent);
+  transition: width 0.3s ease;
+}
+
+.tile-count {
+  padding: 0 2px;
 }
 
 .confirm-card {

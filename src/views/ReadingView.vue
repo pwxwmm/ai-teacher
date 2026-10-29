@@ -1,5 +1,5 @@
 <template>
-  <div class="page reading-page" ref="pageEl">
+  <div class="page reading-page" ref="pageEl" :style="{ '--reading-bg': currentTheme.bg, '--reading-text': currentTheme.text, '--reading-heading': currentTheme.heading, '--reading-body-size': `${fontSize}px`, '--reading-line-height': lineHeight }">
     <div v-if="loading" class="center-box">
       <n-spin size="large" />
     </div>
@@ -15,6 +15,21 @@
     <template v-else-if="chapter">
       <div class="reading-main">
         <div ref="mainColEl" class="main-col">
+          <!-- 手机端：点屏幕左右边翻页（Apple Books 边击翻页；自身不可见） -->
+          <div
+            v-if="chapter.prev_chapter_unit_id"
+            class="page-tap-zone left"
+            role="button"
+            aria-label="上一章"
+            @click="goChapter(chapter.prev_chapter_unit_id)"
+          />
+          <div
+            v-if="chapter.next_chapter_unit_id"
+            class="page-tap-zone right"
+            role="button"
+            aria-label="下一章"
+            @click="goChapter(chapter.next_chapter_unit_id)"
+          />
           <!-- 翻章箭头：贴正文列左右外缘、钉在视口中线，左右位置由 colRect 实测写入 -->
           <div
             v-if="chapter.prev_chapter_unit_id"
@@ -68,13 +83,50 @@
               </div>
             </div>
 
-            <n-card title="原文" class="section">
-              <div ref="unitWrap" class="unit-wrap">
+            <!-- 阅读设置：Apple 图书风（主题 + 字号）；手机默认收起，Aa 圆钮展开 -->
+            <button
+              class="back-fab"
+              title="返回书库"
+              aria-label="返回书库"
+              @click="goBack"
+            >
+              ‹
+            </button>
+            <button
+              class="aa-fab"
+              title="阅读设置"
+              aria-label="阅读设置"
+              @click="settingsOpen = !settingsOpen"
+            >
+              Aa
+            </button>
+            <div v-show="settingsOpen" class="reading-settings">
+              <div class="theme-group" role="group" aria-label="主题切换">
+                <button
+                  v-for="t in themes"
+                  :key="t.key"
+                  class="theme-btn"
+                  :class="{ active: theme === t.key }"
+                  :style="{ background: t.bg, borderColor: t.bg }"
+                  :title="t.label"
+                  @click="setTheme(t.key)"
+                />
+              </div>
+              <div class="font-controls">
+                <n-button size="small" quaternary @click="adjustFontSize(-1)">A−</n-button>
+                <span class="font-size-label muted small">{{ fontSize }}px</span>
+                <n-button size="small" quaternary @click="adjustFontSize(1)">A＋</n-button>
+              </div>
+            </div>
+
+            <n-card title="原文" class="section reading-card" :style="{ background: currentTheme.cardBg }">
+              <div ref="unitWrap" class="unit-wrap" :style="{ color: currentTheme.text, backgroundColor: currentTheme.cardBg }">
                 <template v-for="item in segmentBlocks" :key="item.seg.unit.id">
                   <h4
                     v-if="segmentBlocks.length > 1"
                     :id="`unit-${item.seg.unit.id}`"
                     class="seg-title"
+                    :style="{ color: currentTheme.heading }"
                   >
                     {{ item.seg.unit.title }}
                   </h4>
@@ -86,7 +138,12 @@
                       class="content-img"
                       @error="onImgError"
                     />
-                    <div v-else-if="block.html" class="unit-content md" v-html="block.html"></div>
+                    <div
+                      v-else-if="block.html"
+                      class="unit-content md"
+                      :style="{ fontSize: `${fontSize}px`, lineHeight }"
+                      v-html="block.html"
+                    ></div>
                   </template>
                 </template>
               </div>
@@ -108,7 +165,7 @@
                   >
                     掌握度 {{ Math.round((seg.unit.mastery ?? 0) * 100) }}%
                   </n-tag>
-                  <n-button size="small" type="primary" @click="router.push(`/quiz/${seg.unit.id}`)">
+                  <n-button class="btn-tinted" size="small" @click="router.push(`/quiz/${seg.unit.id}`)">
                     去闯关做题
                   </n-button>
                 </div>
@@ -117,7 +174,7 @@
           </div>
         </div>
 
-        <div class="ai-col">
+        <div v-if="!isNarrow" class="ai-col">
           <n-card title="AI 领读" class="section">
             <template #header-extra>
               <n-button
@@ -200,6 +257,100 @@
       </div>
     </template>
 
+    <!-- 手机端：正文纯净阅读——闯关/AI 收进底部学习助手抽屉（Glass action sheet） -->
+    <button v-if="isNarrow" class="ai-fab" title="学习助手" @click="assistantOpen = true">
+      AI
+    </button>
+    <n-drawer
+      v-if="isNarrow"
+      v-model:show="assistantOpen"
+      placement="bottom"
+      :height="drawerHeight"
+    >
+      <n-drawer-content title="学习助手" closable body-content-style="padding: 12px">
+        <div class="ai-col">
+          <n-card title="AI 领读" class="section">
+            <template #header-extra>
+              <n-button
+                v-if="(session || explainText) && !reading"
+                text
+                size="small"
+                @click="startReading"
+              >
+                重新领读
+              </n-button>
+            </template>
+            <div v-if="reading && !explainText" class="center-box small-pad">
+              <n-spin size="medium" />
+              <span class="muted">AI 伴读正在为你领读本章…</span>
+            </div>
+            <template v-else>
+              <n-alert v-if="readError" type="error" title="领读失败">
+                <div>{{ readError }}</div>
+                <n-button size="small" class="retry-btn" @click="startReading">重试</n-button>
+              </n-alert>
+              <template v-if="session || explainText">
+                <div v-if="session && session.knowledge_points.length > 0" class="kp-row">
+                  <n-tag
+                    v-for="kp in session.knowledge_points"
+                    :key="kp"
+                    type="info"
+                    size="small"
+                    round
+                    :bordered="false"
+                  >
+                    {{ kp }}
+                  </n-tag>
+                </div>
+                <div class="md" v-html="explanationHtml"></div>
+                <div v-if="reading" class="stream-hint muted small">AI 伴读正在领读本章…</div>
+              </template>
+              <div v-else-if="!readError" class="center-box small-pad">
+                <span class="muted">让 AI 伴读带你通读整章，梳理脉络、划出重点</span>
+                <n-button type="primary" @click="startReading">开始领读</n-button>
+              </div>
+            </template>
+          </n-card>
+
+          <n-card title="答疑" class="section">
+            <div class="ask-row">
+              <n-input
+                v-model:value="question"
+                type="textarea"
+                :autosize="{ minRows: 1, maxRows: 4 }"
+                placeholder="就本章内容向 AI 伴读提问…"
+                :disabled="asking"
+              />
+              <n-button
+                type="primary"
+                :loading="asking"
+                @mousedown="commitComposingInput"
+                @click="onAsk"
+              >
+                提问
+              </n-button>
+            </div>
+            <div v-if="history.length > 0" class="qa-list">
+              <div v-for="(qa, i) in history" :key="i" class="qa-item">
+                <div class="qa-q"><span class="qa-tag">问</span>{{ qa.q }}</div>
+                <div class="qa-a">
+                  <span class="qa-tag ai">答</span>
+                  <div class="qa-a-body">
+                    <div v-if="qa.html" class="md" v-html="qa.html"></div>
+                    <div v-else-if="!qa.error" class="qa-typing">
+                      <n-spin size="small" />
+                      <span class="muted small">AI 伴读正在思考…</span>
+                    </div>
+                    <div v-if="qa.error" class="qa-error small">提问失败：{{ qa.error }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </n-card>
+        </div>
+      </n-drawer-content>
+    </n-drawer>
+
     <div
       v-if="selShow"
       ref="selBtnEl"
@@ -261,6 +412,8 @@ import {
   NAlert,
   NButton,
   NCard,
+  NDrawer,
+  NDrawerContent,
   NEmpty,
   NInput,
   NModal,
@@ -310,12 +463,80 @@ const chapter = ref<ChapterContent | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 
+// —— 阅读偏好（Apple 图书风主题 + 字号）————
+const READING_PREFS_KEY = "ai-teacher:reading-prefs";
+
+interface ThemeDef {
+  key: string;
+  label: string;
+  bg: string;
+  cardBg: string;
+  text: string;
+  heading: string;
+}
+
+const themes: ThemeDef[] = [
+  { key: "paper", label: "纸白", bg: "#FFFFFF", cardBg: "#FFFFFF", text: "rgba(0,0,0,0.85)", heading: "rgba(0,0,0,0.87)" },
+  { key: "sepia", label: "暖纸", bg: "#F5EFDC", cardBg: "#F8F3E4", text: "rgba(87,60,38,0.85)", heading: "rgba(70,48,24,0.87)" },
+  { key: "slate", label: "深灰", bg: "#4A4A4C", cardBg: "#3A3A3B", text: "rgba(255,255,255,0.85)", heading: "rgba(255,255,255,0.9)" },
+  { key: "night", label: "夜黑", bg: "#1C1C1E", cardBg: "#2C2C2E", text: "rgba(255,255,255,0.80)", heading: "rgba(255,255,255,0.9)" },
+];
+
+const theme = ref<string>("paper");
+const fontSize = ref<number>(16);
+// 阅读设置折叠：桌面常开；手机默认收起，Aa 圆钮展开（Apple Books aa 菜单）
+const settingsOpen = ref<boolean>(window.innerWidth > 820);
+const lineHeight = 1.75;
+
+function loadPrefs(): { theme?: string; fontSize?: number } {
+  try {
+    return JSON.parse(localStorage.getItem(READING_PREFS_KEY) || "{}") ?? {};
+  } catch {
+    return {};
+  }
+}
+applyPrefs(loadPrefs());
+
+function applyPrefs(p: { theme?: string; fontSize?: number }): void {
+  if (p.theme && themes.some((t) => t.key === p.theme)) theme.value = p.theme!;
+  if (p.fontSize != null) fontSize.value = clampFont(p.fontSize);
+}
+
+function clampFont(n: number): number {
+  return Math.min(24, Math.max(13, Math.round(n)));
+}
+
+function setTheme(key: string): void {
+  theme.value = key;
+}
+
+function adjustFontSize(delta: number): void {
+  fontSize.value = clampFont(fontSize.value + delta);
+}
+
+const currentTheme = computed(() => themes.find((t) => t.key === theme.value) ?? themes[0]);
+
+watch([theme, fontSize], ([t, s]) => {
+  try {
+    localStorage.setItem(READING_PREFS_KEY, JSON.stringify({ theme: t, fontSize: s }));
+  } catch {
+    /* 本地存储不可用时仅本次运行内记忆 */
+  }
+});
+
 const session = ref<ReadingSession | null>(null);
 const reading = ref(false);
 const readError = ref<string | null>(null);
 const explainText = ref("");
 
 const question = ref("");
+// 手机端结构开关：正文纯净，闯关/AI 收抽屉（≥821px 时保持桌面双列结构）
+const isNarrow = ref(window.innerWidth <= 820);
+const assistantOpen = ref(false);
+function onNarrowResize(): void {
+  isNarrow.value = window.innerWidth <= 820;
+}
+const drawerHeight = computed(() => Math.round(window.innerHeight * 0.72));
 const asking = ref(false);
 const history = ref<QA[]>([]);
 
@@ -466,6 +687,7 @@ onMounted(() => {
   pageEl.value?.addEventListener("touchstart", onTouchStart, { passive: true });
   pageEl.value?.addEventListener("touchend", onTouchEnd, { passive: true });
   window.addEventListener("scroll", hideSelButton, true);
+  window.addEventListener("resize", onNarrowResize, { passive: true });
 });
 
 onBeforeUnmount(() => {
@@ -476,6 +698,7 @@ onBeforeUnmount(() => {
   pageEl.value?.removeEventListener("touchstart", onTouchStart);
   pageEl.value?.removeEventListener("touchend", onTouchEnd);
   window.removeEventListener("scroll", hideSelButton, true);
+  window.removeEventListener("resize", onNarrowResize);
 });
 
 async function scrollAfterLoad(): Promise<void> {
@@ -925,11 +1148,15 @@ function renderMarkdown(src: string): string {
   font-size: 22px;
   font-weight: 300;
   line-height: 1;
-  /* 悬浮小圆钮：半透明白底 + 淡阴影，悬停变实并变绿；背景透明时 iOS 原生控件会画成方块，必须给底色 */
+  /* 液态玻璃圆钮：半透白 + 模糊 + 高光内边，悬停变实并变绿；背景透明时 iOS 原生控件会画成方块，必须给底色 */
   color: #6b7280;
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
-  border: none;
+  background: rgba(255, 255, 255, 0.55);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  backdrop-filter: blur(20px) saturate(170%);
+  border: 0.5px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 1px 6px rgba(0, 0, 0, 0.1);
   outline: none;
   opacity: 1;
   cursor: pointer;
@@ -943,7 +1170,7 @@ function renderMarkdown(src: string): string {
 
 .side-arrow:hover,
 .side-arrow:focus-visible {
-  color: #18a058;
+  color: var(--color-accent);
   background: #fff;
 }
 
@@ -967,6 +1194,57 @@ function renderMarkdown(src: string): string {
 }
 
 /* 两列都被限制在阅读区高度内（height:100% + 父级定高），内容超出才在自己的滚动条里滚 */
+
+.reading-settings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+
+.theme-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.theme-btn:hover {
+  transform: scale(1.12);
+}
+
+.theme-btn.active {
+  box-shadow: 0 0 0 2px var(--text-secondary), 0 0 0 3.5px var(--text-tertiary);
+}
+
+.font-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.font-size-label {
+  min-width: 40px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
 .main-col {
   flex: 1;
   min-width: 0;
@@ -987,6 +1265,54 @@ function renderMarkdown(src: string): string {
 }
 
 /* 窄屏三列放不下：退回单列整页滚动，箭头改为相对页面定位（随内容滚动） */
+
+.reading-card {
+  transition: background-color 0.2s ease;
+}
+
+/* 暗色主题下 n-card 标题仍用默认黑字——改成跟随阅读主题的标题色 */
+.reading-card :deep(.n-card-header__main) {
+  color: var(--reading-heading);
+}
+
+.reading-card :deep(.n-card__content) {
+  background-color: inherit;
+}
+
+.unit-wrap * {
+  color: inherit;
+}
+
+/* 让正文受主题色支配（不再固定死 map 默认） */
+.unit-content,
+.unit-content.md,
+.unit-wrap,
+.unit-wrap p,
+.unit-wrap li,
+.unit-wrap h1,
+.unit-wrap h2,
+.unit-wrap h3 {
+  color: var(--reading-text) !important;
+  background: transparent;
+}
+
+.seg-title {
+  color: var(--reading-heading) !important;
+}
+
+.content-img {
+  display: block;
+  max-width: 100%;
+  margin: 14px auto;
+  border-radius: 6px;
+}
+
+@media (max-width: 1100px) {
+  .ai-col {
+    width: 320px;
+  }
+}
+
 @media (max-width: 900px) {
   .reading-main {
     display: block;
@@ -1007,14 +1333,140 @@ function renderMarkdown(src: string): string {
 
   .side-arrow {
     position: absolute;
+    display: none; /* 手机端隐藏悬浮翻页钮，改点按屏幕左右边翻页 */
   }
 
-  .side-arrow.left {
+  .page-tap-zone {
+    display: block;
+  }
+
+  .page-tap-zone.left {
     left: 0;
   }
 
-  .side-arrow.right {
+  .page-tap-zone.right {
     right: 0;
+  }
+}
+
+.page-tap-zone {
+  display: none;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 62px;
+  z-index: 10;
+  cursor: pointer;
+}
+
+/* Aa 圆钮 / 返回钮：手机端阅读设置与退出入口（Apple Books 的阅读 chrome） */
+.back-fab,
+.aa-fab {
+  display: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 15;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0.5px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.6);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  backdrop-filter: blur(16px) saturate(170%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 2px 8px rgba(0, 0, 0, 0.08);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.12s ease-out;
+}
+
+.back-fab:active,
+.aa-fab:active {
+  transform: scale(0.94);
+}
+
+.back-fab {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 15;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0.5px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.6);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  backdrop-filter: blur(16px) saturate(170%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 2px 8px rgba(0, 0, 0, 0.08);
+  color: var(--text-secondary);
+  font-size: 24px;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.12s ease-out;
+}
+
+/* 手机阅读页沉浸：只留一行居中小标题，章导航隐去（翻页走两侧箭头/滑动），原文拆卡片框 */
+@media (max-width: 820px) {
+  .aa-fab,
+  .back-fab {
+    display: block;
+  }
+
+  .read-col {
+    position: relative;
+    /* 手机端正文解绑：不限宽不居中，全部可用宽度都给内容 */
+    max-width: none;
+    margin: 0;
+    padding: 0 16px 24px;
+  }
+
+  .reading-card {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  .reading-card :deep(.n-card-header) {
+    display: none;
+  }
+
+  .reading-card :deep(.n-card__content) {
+    padding: 0 !important;
+  }
+
+  .read-col .page-header {
+    flex-direction: row;
+    justify-content: center;
+    margin-bottom: 4px;
+  }
+
+  .read-col .page-header > div:first-child {
+    text-align: center;
+  }
+
+  .read-col .page-title {
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .read-col .page-subtitle {
+    display: none;
+  }
+
+  .read-col .chapter-nav {
+    display: none;
+  }
+
+  .reading-settings {
+    margin-bottom: 8px;
   }
 }
 
@@ -1129,7 +1581,7 @@ function renderMarkdown(src: string): string {
 
 .qa-tag.ai {
   background: #e0f2e9;
-  color: #18a058;
+  color: var(--color-accent);
 }
 
 .footer-bar {
@@ -1305,7 +1757,7 @@ function renderMarkdown(src: string): string {
 }
 
 .md :deep(a) {
-  color: #18a058;
+  color: var(--color-accent);
   text-decoration: none;
 }
 
@@ -1322,8 +1774,8 @@ function renderMarkdown(src: string): string {
 }
 
 .md.unit-content {
-  font-size: 18px;
-  line-height: 1.9;
+  font-size: var(--reading-body-size, 18px);
+  line-height: var(--reading-line-height, 1.9);
 }
 
 .md.unit-content :deep(p) {
