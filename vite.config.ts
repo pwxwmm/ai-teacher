@@ -15,6 +15,9 @@ function gitStamp(): string {
   }
 }
 
+// 真机调试时 Tauri 注入 TAURI_DEV_HOST（局域网 IP），dev server 需监听该地址供 iPhone 访问
+const host = process.env.TAURI_DEV_HOST;
+
 const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf-8")) as {
   version: string;
 };
@@ -35,6 +38,8 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    host: host || false,
+    hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: {
       ignored: ["**/src-tauri/target/**", "**/src-tauri/gen/**"],
     },

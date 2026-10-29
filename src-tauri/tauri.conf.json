@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AI 伴读",
-  "version": "0.1.0",
+  "version": "0.2.0-rc.2",
   "identifier": "com.example.aiteacher",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -30,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "dmg"],
+    "targets": ["nsis", "dmg", "appimage"],
     "category": "public.app-category.education",
     "copyright": "Copyright © 2026 腹有诗书气自华、抛物线. All rights reserved.",
     "macOS": {
