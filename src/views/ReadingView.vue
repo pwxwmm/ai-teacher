@@ -85,6 +85,14 @@
 
             <!-- 阅读设置：Apple 图书风（主题 + 字号）；手机默认收起，Aa 圆钮展开 -->
             <button
+              class="back-fab"
+              title="返回书库"
+              aria-label="返回书库"
+              @click="goBack"
+            >
+              ‹
+            </button>
+            <button
               class="aa-fab"
               title="阅读设置"
               aria-label="阅读设置"
@@ -1241,7 +1249,8 @@ function renderMarkdown(src: string): string {
   cursor: pointer;
 }
 
-/* Aa 圆钮：手机端阅读设置入口（Apple Books aa 菜单的触发片） */
+/* Aa 圆钮 / 返回钮：手机端阅读设置与退出入口（Apple Books 的阅读 chrome） */
+.back-fab,
 .aa-fab {
   display: none;
   position: absolute;
@@ -1265,13 +1274,39 @@ function renderMarkdown(src: string): string {
   transition: transform 0.12s ease-out;
 }
 
+.back-fab:active,
 .aa-fab:active {
   transform: scale(0.94);
 }
 
+.back-fab {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 15;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0.5px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.6);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  backdrop-filter: blur(16px) saturate(170%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 2px 8px rgba(0, 0, 0, 0.08);
+  color: var(--text-secondary);
+  font-size: 24px;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.12s ease-out;
+}
+
 /* 手机阅读页沉浸：只留一行居中小标题，章导航隐去（翻页走两侧箭头/滑动），原文拆卡片框 */
 @media (max-width: 820px) {
-  .aa-fab {
+  .aa-fab,
+  .back-fab {
     display: block;
   }
 
