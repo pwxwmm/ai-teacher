@@ -1201,6 +1201,27 @@ function renderMarkdown(src: string): string {
   }
 }
 
+/* 手机阅读页收窄页头：Apple Books 的沉浸感——大标题变单行小标题、副标题隐去 */
+@media (max-width: 820px) {
+  .read-col .page-header {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .read-col .page-title {
+    font-size: 17px;
+  }
+
+  .read-col .page-subtitle {
+    display: none;
+  }
+
+  .reading-settings {
+    margin-bottom: 10px;
+  }
+}
+
 .section {
   margin-bottom: 20px;
 }
