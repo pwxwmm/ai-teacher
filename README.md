@@ -12,12 +12,12 @@
 
 ## 快速开始
 
-环境要求：Node.js + pnpm、Rust stable（MSVC 工具链）、Windows 需 WebView2（Win10/11 一般自带）。
+环境要求：Node.js + pnpm、Rust stable（MSVC 工具链）、Windows 需 WebView2（Win10/11 一般自带）、Linux 需 webkit2gtk 等系统依赖（[Tauri 官方清单](https://tauri.app/start/prerequisites/)）。
 
 ```bash
 pnpm install
 pnpm tauri dev      # 开发模式（前端热更新）
-pnpm tauri build    # 产出可执行文件（当前 bundle.active=false，不打安装包）
+pnpm tauri build    # 产出可执行文件 + 当前平台安装包（Windows NSIS / macOS DMG / Linux AppImage）
 ```
 
 首次打开后到 **设置** 页填入 LLM 配置（OpenAI 兼容接口，如 DeepSeek / Kimi / 通义）：`base_url`、`api_key`、`model`，点"测试连接"确认。配置保存在系统应用数据目录的 `config.json`，不会进入本仓库。
@@ -41,7 +41,7 @@ pnpm build                   # vue-tsc 严格检查 + 前端构建
 
 ## 上架 Apple Store（macOS）
 
-> 本应用面向 **Mac App Store** 发布；Tauri 同一代码也可出 Windows 安装包（NSIS）。
+> 本应用面向 **Mac App Store** 发布；Tauri 同一代码也可出 Windows 安装包（NSIS）和 Linux AppImage。
 
 ### 需要准备
 

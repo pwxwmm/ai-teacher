@@ -31,7 +31,7 @@ cd src-tauri && cargo test  # 后端全部测试（离线、无需 Tauri 运行�
 
 环境变量 `AI_TEACHER_MOCK_LLM=1`：LLM 全部走确定性 mock，可无 API Key 端到端跑通流程；后端测试依赖它。
 
-发版走 GitHub Actions（`.github/workflows/release.yml`）：`git tag v<x.y.z> && git push origin v<x.y.z>` 触发，windows-latest 出 NSIS / macos-latest 出 arm64 DMG，建**草稿** Release 待改完说明再发布；tag 版本号必须与 `tauri.conf.json` 的 `version` 一致（CI 会跑 `pnpm build` 里的 vue-tsc 严格检查，红了直接失败，不会出包）。
+发版走 GitHub Actions（`.github/workflows/release.yml`）：`git tag v<x.y.z> && git push origin v<x.y.z>` 触发，windows-latest 出 NSIS、macos-latest 出 arm64 DMG、ubuntu-latest 出 AppImage（Linux 通用单文件包，Arch 等发行版从 Release 下载即用，首次报 fuse 错误时 `sudo pacman -S fuse2`；构建依赖按 Tauri 官方清单装在 workflow 的 ubuntu 条件步骤），建**草稿** Release 待改完说明再发布；`bundle.targets` 混列各平台格式（nsis/dmg/appimage）是安全的——CLI 只构当前平台支持的、其余跳过，本地 mac 出不了 Linux 包，AppImage 只能靠 CI 验证；tag 版本号必须与 `tauri.conf.json` 的 `version` 一致（CI 会跑 `pnpm build` 里的 vue-tsc 严格检查，红了直接失败，不会出包）。
 
 ## 前后端契约（改任何一侧都要同步另一侧）
 

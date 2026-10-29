@@ -30,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "dmg"],
+    "targets": ["nsis", "dmg", "appimage"],
     "category": "public.app-category.education",
     "copyright": "Copyright © 2026 aiteacher. All rights reserved.",
     "macOS": {
