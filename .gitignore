@@ -2,9 +2,12 @@ node_modules/
 dist/
 src-tauri/target/
 src-tauri/gen/
+# iOS 签名配置（含本机 bundle id 与 Team ID，不入库；模板见 tauri.ios.conf.example.json）
+src-tauri/tauri.ios.conf.json
 *.local
 .DS_Store
 # 个人本地资料（不入库）
+*.epub
 大模型推理服务课程.md
 推理框架工程师-学习路线.md
 PD分离实战与原理.md

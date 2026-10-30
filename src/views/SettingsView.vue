@@ -86,7 +86,7 @@
       </div>
       <div class="about-section">
         <div class="about-label">开发者</div>
-        <div class="muted small">腹有诗书气自华、抛物线</div>
+        <div class="muted small">tobykyzy001</div>
       </div>
       <div class="about-section">
         <div class="about-label">隐私说明</div>
