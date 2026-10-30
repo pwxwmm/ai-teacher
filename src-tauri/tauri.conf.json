@@ -32,7 +32,7 @@
     "active": true,
     "targets": ["nsis", "dmg", "appimage"],
     "category": "public.app-category.education",
-    "copyright": "Copyright © 2026 aiteacher. All rights reserved.",
+    "copyright": "Copyright © 2026 tobykyzy001. All rights reserved.",
     "macOS": {
       "minimumSystemVersion": "13.0"
     },

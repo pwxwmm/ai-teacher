@@ -7,7 +7,7 @@
 ## 一、项目概况
 
 - **项目**：AI 伴读（桌面学习应用：导入书 → AI 领读 → 做题 → SM-2 间隔复习）
-- **路径**：`C:\dev\projects/kimicodes/ai-teacher`
+- **路径**：`<本机仓库路径>/ai-teacher`
 - **技术栈**：Tauri v2（Rust 后端）+ Vue 3 + TypeScript + Vite + Pinia + Naive UI，**用 pnpm**
 - **机器环境**：macOS 27（Apple Silicon arm64）、Node 22（nvm）、pnpm 11.7、Rust 1.99 + **llvm-tools 组件已装**（iOS 必需）、Xcode 27.1（含 iPhoneOS 27.1 SDK）
 - **xcodegen**：已手动装到 `~/.local/bin/xcodegen`（brew 装不了，见「弯路」）
@@ -82,7 +82,7 @@ pnpm tauri ios dev "iPhone Duo"   # vite dev + cargo 构建 + simctl 部署启�
 
 ## 六、LLM 配置（用户已配好）
 
-- **供应商**：dsh，base_url `http://10.0.0.1:8000/v1`，model `deepseek-v4-pro`
+- **供应商**：内网 DeepSeek 服务（base_url 为内网地址，不入文档），model `deepseek-v4-pro`
 - **配置文件**：`~/Library/Application Support/com.example.aiteacher/config.json`（不入库；iOS 端沙盒是独立 config，首次跑需在设备上重新设置）
 
 ## 七、用户数据位置
@@ -101,7 +101,7 @@ pnpm tauri ios dev "iPhone Duo"   # vite dev + cargo 构建 + simctl 部署启�
 
 全链路已打通，release IPA 已装进用户的 iPhone 16 Pro：
 
-- **签名三连坑全趟平**（细节见 AGENTS 已知坑 9）：Xcode 登录免费 Apple ID → GUI 选 Team 生成证书（Team `REDACTED_TEAM_ID`）→ bundle id `com.example.aiteacher` 被苹果拒收（"not available"，太泛被占）→ 改 **`com.aiteacher.dev`**，写进 `src-tauri/tauri.ios.conf.json`（平台专用覆盖文件，桌面 identifier 不动）→ `xcodebuild -allowProvisioningUpdates` 自动建描述文件 → 手机上「VPN与设备管理」信任开发者
+- **签名三连坑全趟平**（细节见 AGENTS 已知坑 9）：Xcode 登录免费 Apple ID → GUI 选 Team 生成证书（Team ID 不入文档，本机见 `src-tauri/tauri.ios.conf.json`）→ bundle id `com.example.aiteacher` 被苹果拒收（"not available"，太泛被占）→ 改成专属 id 写进 `src-tauri/tauri.ios.conf.json`（平台专用覆盖文件，桌面 identifier 不动；具体值不入文档）→ `xcodebuild -allowProvisioningUpdates` 自动建描述文件 → 手机上「VPN与设备管理」信任开发者
 - **`tauri ios dev` 每次会按 tauri.conf 重新同步 gen 工程**——手改 pbxproj 无效，教训
 - `vite.config.ts` 已支持 `TAURI_DEV_HOST`（真机 dev 从局域网加载必需，官方模板标配）；`src-tauri/Info.ios.plist`（自动 merge，加 NSLocalNetworkUsageDescription）
 - **DeepSeek 官方配置已预置进设备容器**（`devicectl copy to --domain-type appDataContainer`）：base_url `https://api.deepseek.com`、model `deepseek-chat`、key 取自用户 Kimi Code 配置

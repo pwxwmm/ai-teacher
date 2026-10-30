@@ -1,0 +1,8 @@
+{
+  "identifier": "com.yourid.aiteacher",
+  "bundle": {
+    "iOS": {
+      "developmentTeam": "YOUR_TEAM_ID"
+    }
+  }
+}
